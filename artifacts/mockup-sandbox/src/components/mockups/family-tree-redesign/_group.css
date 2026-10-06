@@ -1,0 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap');
+
+:root {
+  --background: 42 42% 95%;
+  --foreground: 155 31% 17%;
+  --border: 37 24% 82%;
+  --card: 43 45% 98%;
+  --primary: 151 36% 25%;
+  --primary-foreground: 42 42% 96%;
+  --app-font-sans: 'DM Sans', sans-serif;
+  --app-font-serif: 'Playfair Display', Georgia, serif;
+}
+
+* { box-sizing: border-box; }
+button, input { font: inherit; }

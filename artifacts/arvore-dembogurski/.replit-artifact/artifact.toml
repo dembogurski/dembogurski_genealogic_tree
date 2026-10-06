@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Árvore da Família Dembogurski"
+description = "Árvore genealógica colaborativa para o Encontro da Família Dembogurski, com cinco ramos, busca, edição de familiares, fotos, modo de projeção e exportação para impressão."
+version = "1.0.0"
+id = "artifacts/arvore-dembogurski"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19141
+
+[services.development]
+run = "pnpm --filter @workspace/arvore-dembogurski run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/arvore-dembogurski", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/arvore-dembogurski/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19141"
+BASE_PATH = "/"

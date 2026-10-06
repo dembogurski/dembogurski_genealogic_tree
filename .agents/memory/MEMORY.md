@@ -1,0 +1,4 @@
+- [GitHub publishing constraint](github-publishing.md) — do not push this project to GitHub unless the user changes that instruction.
+- [Post-merge setup timeout](post-merge-timeout.md) — dependency installation plus Drizzle schema introspection needs a generous hook timeout.
+- [Family-tree removal policy](family-tree-removal.md) — removing a person from saved family records also removes their descendants.
+- [Family-tree layout preference](family-tree-layout.md) — keep all generations in branching rows, with siblings side by side; a large tree is acceptable.

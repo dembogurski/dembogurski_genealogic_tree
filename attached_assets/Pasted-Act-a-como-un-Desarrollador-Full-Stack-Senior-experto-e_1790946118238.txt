@@ -1,0 +1,52 @@
+Actúa como un Desarrollador Full Stack Senior experto en PHP 8.x, MySQL/MariaDB, JavaScript vanilla y la librería FamilyTreeJS (o SVG/Canvas dinámico).
+
+Quiero construir el código completo para un sistema web de Árbol Genealógico Interactivo y Colaborativo para un evento ("Encontro da Família Dembogurski").
+
+=========================================
+ENTORNO DE DESPLIEGUE Y SERVIDOR
+=========================================
+- Sistema Operativo: Linux Debian.
+- Stack: Apache2, PHP 8.x, MariaDB / MySQL (LAMP).
+- Red / Acceso: Debe funcionar por IP directa (ej: http://192.168.1.50/arbol/ o http://SERVER_IP/arbol/) sin depender de nombres de dominio, rutas absolutas rígidas ni configuración de HTTPS previa. Todas las rutas de assets, subida de archivos y llamadas a la API deben ser relativas (`./` o dinámicas basadas en la URL del cliente).
+
+=========================================
+ESTRUCTURA FAMILIAR Y REGLAS DE NEGOCIO
+=========================================
+1. Raíz y Ramos:
+   - Pareja ancestral central: Matias Dembogurski y Sophia Dembogurski.
+   - 5 Ramos/Ramas principales (derivados de los ancestros):
+     * Ramo 1: Miguel Dembogurski (Color Verde)
+     * Ramo 2: Pedro Dembogurski (Color Naranja)
+     * Ramo 3: João Dembogurski (Color Azul)
+     * Ramo 4: Maria Dembogurski (Color Morado)
+     * Ramo 5: Júlia Dembogurski (Color Rojo)
+
+2. Filiación y Manejo de Cónyuges:
+   - Un hijo puede tener 2 progenitores registrados (padre y madre biológicos -> 2 líneas de filiación) O un solo progenitor (1 línea de filiación directa).
+   - Un hijo puede ser fruto de una relación previa y no del cónyuge actual. En ese caso, la línea de filiación debe nacer de forma individual desde su progenitor biológico.
+   - La tabla de la base de datos debe tener `padre_id` (opcional) y `madre_id` (opcional) independientes, además de `conyuge_actual_id` (opcional).
+
+3. Visualización y Control en Pantalla:
+   - Debe existir un botón/toggle "Mostrar / Ocultar Cónyuges Actuales". Al desactivarlo, el árbol oculta las tarjetas de las parejas y colapsa la vista para mostrar únicamente la línea de sangre directa (Dembogurski).
+   - Debe incluir un botón de exportación a formato vectorial (PDF / SVG) en alta resolución para poder imprimir el árbol completo en gigantografía de gran formato.
+   - Modo Proyección / Live: Polling o refresco automático cada 15 segundos para la pantalla gigante del evento.
+
+=========================================
+FLUJO DE TRABAJO Y PRECARGA
+=========================================
+- Fase Pre-evento: Se precargará casi toda la estructura familiar existente. El sistema debe contar con un buscador rápido por nombre/apellido para ubicar fácilmente a una persona precargada.
+- Fase Evento: Al hacer clic o tocar sobre cualquier persona en el árbol (desde celular o PC), debe abrirse un menú o modal interactivo con las opciones: "Ver Datos", "Agregar Hijo/a", "Vincular Cónyuge" y "Subir / Cambiar Foto".
+- Soporte para Códigos QR: Permitir parámetros en la URL (ej. `index.html?rama=3`) para pre-filtrar y enfocar la vista en una rama específica al escanear un QR en las mesas.
+
+=========================================
+ENTREGABLES REQUERIDOS EN EL CÓDIGO
+=========================================
+1. `schema.sql`: Script de base de datos MySQL/MariaDB con tablas, llaves foráneas e INSERTs iniciales con los ancestros y los 5 ramos principales.
+2. `db.php`: Conexión PDO configurable a MariaDB.
+3. `api.php`: API RESTful en PHP que maneje:
+   - Endpoint GET `get_tree` (retorna JSON para el canvas).
+   - Endpoint POST `add_person` (procesa formulario y foto).
+   - Endpoint POST `upload_photo` (procesa la subida/cambio de foto con validación de imagen JPG/PNG y guardado en carpeta `./uploads/`).
+4. `index.html` + `app.js` + `styles.css`: Interfaz completa, responsiva, con el lienzo interactivo de FamilyTreeJS, controles flotantes, modal de carga móvil y lógica de filtrado/ocultamiento de cónyuges.
+
+Por favor, provee todo el código funcional, limpio y documentado listo para subir al directorio Apache en Debian.
