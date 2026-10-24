@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/user-store.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -60,6 +61,8 @@ function startUserSession(string $user): void
 
 function isOrganizer(string $user): bool
 {
+    $store = treeUserStore();
+    if ($store !== null) return $store->isAdmin($user);
     $configuredUsers = runtimeEnv('TREE_ORGANIZERS');
     if ($configuredUsers === false || trim($configuredUsers) === '') {
         return false;
@@ -211,6 +214,8 @@ function getTree(PDO $pdo, string $user): never
     respond([
         'people' => $people,
         'can_edit' => isOrganizer($user),
+        'can_manage_users' => isOrganizer($user) && treeUserStore() !== null,
+        'current_user' => $user,
         'csrf_token' => $_SESSION['csrf_token'],
     ]);
 }
@@ -591,6 +596,26 @@ try {
         requireOrganizer($user);
         requireValidCsrfToken();
     }
+    if (in_array($action, ['list_users', 'save_user', 'delete_user'], true)) {
+        requireOrganizer($user);
+        $store = treeUserStore();
+        if ($store === null) {
+            respond(['error' => 'O cadastro de usuários ainda não está configurado no servidor.'], 503);
+        }
+        if ($method === 'GET' && $action === 'list_users') {
+            respond(['users' => $store->list($user), 'current_user' => $user]);
+        }
+        if ($method === 'POST' && $action === 'save_user') {
+            respond(['users' => $store->save($user, inputJson()), 'current_user' => $user]);
+        }
+        if ($method === 'POST' && $action === 'delete_user') {
+            $body = inputJson();
+            $username = cleanText($body['username'] ?? null, 'usuário', 64, true);
+            respond(['users' => $store->delete($user, $username), 'current_user' => $user]);
+        }
+        header('Allow: ' . ($action === 'list_users' ? 'GET' : 'POST'));
+        respond(['error' => 'Método não permitido.'], 405);
+    }
     $pdo = db();
     if ($method === 'GET' && $action === 'get_tree') {
         getTree($pdo, $user);
@@ -612,6 +637,8 @@ try {
     }
     header('Allow: GET, POST');
     respond(['error' => 'Endpoint não encontrado.'], 404);
+} catch (UserManagementException $error) {
+    respond(['error' => $error->getMessage()], $error->status);
 } catch (PDOException $error) {
     error_log('Family tree database operation failed (SQLSTATE ' . (string)$error->getCode() . ').');
     respond(['error' => 'O serviço da árvore está temporariamente indisponível.'], 500);

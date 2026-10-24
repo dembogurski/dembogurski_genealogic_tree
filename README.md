@@ -2,6 +2,20 @@
 
 Aplicación web para consultar y mantener el árbol genealógico familiar. La vista de desarrollo usa datos guardados en el navegador; para compartir los cambios entre usuarios, instala la versión PHP/MySQL en Apache.
 
+El proyecto incluye una portada pública en la raíz del sitio y el árbol protegido en `/arvore/`. En WAMP, las direcciones locales son `http://localhost/dembogurski/` y `http://localhost/dembogurski/arvore/`.
+
+En **Definir localização**, escribe una ciudad o lugar, pulsa **Buscar** y selecciona un resultado para completar la latitud y la longitud. Confirma con **Salvar localização**. Las coordenadas también se pueden editar manualmente.
+
+La búsqueda requiere Internet y consulta [Photon](https://github.com/komoot/photon), con datos de OpenStreetMap. Envía únicamente el texto de la búsqueda, no el registro familiar. Las consultas se realizan al pulsar Buscar y los resultados se reutilizan durante la sesión; el servicio público puede limitar solicitudes o estar temporalmente indisponible. El proveedor se configura en `src/location-search.ts`.
+
+Para proyectar, usa **Projetar** en la barra del árbol: abre pantalla completa y ajusta todos los niveles del ramo seleccionado. **Ajustar à tela** recalcula el zoom al cambiar la pantalla, el ramo o los datos. Los botones de zoom y **100%** permiten explorar detalles sin cambiar el tamaño de la interfaz. Puedes seleccionar **Todos os ramos** en esa misma barra. Para salir de pantalla completa, usa **Sair da tela cheia** o Esc. En árboles muy grandes, el ajuste completo reduce los textos: selecciona un ramo o amplía el zoom para leer los nombres.
+
+Los administradores tienen una engranaje junto a **atualiza a cada 15 s** para crear usuarios, definir perfiles **Administrador** y **Leitor**, cambiar contraseñas y eliminar accesos. Los cambios se aplican sin reiniciar Apache. La configuración de la carpeta privada y la recuperación por consola están en [USUARIOS-WAMP.md](USUARIOS-WAMP.md).
+
+El título incluye un brasão simbólico original a su derecha. Su referencia histórica, significado y prompt de creación están en [BRASAO-DEMBOGURSKI.md](BRASAO-DEMBOGURSKI.md).
+
+**Imprimir árvore** abre una vista previa con todos los ramos y generaciones, aunque la página esté filtrada, con zoom o mostrando el mapa. **Imprimir** ajusta el contenido completo a una sola página A4 horizontal, con márgenes de 10 mm. **Voltar à árvore** restaura la vista, filtro y zoom anteriores. El tamaño de los nombres depende de la cantidad de personas que deban entrar en la hoja.
+
 ## Requisitos
 
 - Node.js 24.x

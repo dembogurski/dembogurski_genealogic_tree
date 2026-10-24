@@ -3,8 +3,12 @@ import {
   AlertCircle, Camera, Check, ChevronRight, CircleHelp, Clock3, Download,
   Flower2, GitBranch, Heart, Leaf, Link2, Map as MapIcon, MapPin, Pencil, Plus, Printer, RotateCw,
   Search, TreeDeciduous, Trash2, UserPlus, Users, X,
+  Maximize, Minimize, ZoomIn, ZoomOut, Scan, Settings,
 } from 'lucide-react';
 import FamilyMap from './FamilyMap';
+import { type Place, searchPlaces } from './location-search';
+import { fitTreeZoom } from './tree-zoom';
+import UserAdministration from './UserAdministration';
 
 export type Person = {
   id: number;
@@ -24,7 +28,7 @@ export type Person = {
   longitude: number | null;
 };
 
-type TreeResponse = { people: Person[]; can_edit?: boolean; csrf_token?: string };
+type TreeResponse = { people: Person[]; can_edit?: boolean; can_manage_users?: boolean; current_user?: string; csrf_token?: string };
 type FormKind = 'child' | 'spouse' | 'photo' | 'location' | 'edit' | 'delete';
 type BranchInfo = { id: number; title: string; phrase: string; icon: typeof Leaf };
 
@@ -162,6 +166,10 @@ function Modal({ title, kicker, onClose, children }: { title: string; kicker: st
 function App() {
   const [people, setPeople] = useState<Person[]>([]);
   const [canEdit, setCanEdit] = useState(isDemo);
+  const [canManageUsers, setCanManageUsers] = useState(false);
+  const [currentUser, setCurrentUser] = useState('');
+  const [managingUsers, setManagingUsers] = useState(false);
+  const [usersBusy, setUsersBusy] = useState(false);
   const [csrfToken, setCsrfToken] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -180,6 +188,93 @@ function App() {
   const [refreshTick, setRefreshTick] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
   const treeStageRef = useRef<HTMLElement | null>(null);
+  const appShellRef = useRef<HTMLElement | null>(null);
+  const treeContentRef = useRef<HTMLDivElement | null>(null);
+  const [treeZoom, setTreeZoom] = useState(1);
+  const [fitMode, setFitMode] = useState(false);
+  const [projecting, setProjecting] = useState(false);
+  const [projectionError, setProjectionError] = useState('');
+  const [printPreview, setPrintPreview] = useState(false);
+  const beforePrintRef = useRef<{ view: 'tree' | 'map'; branch: number | null; query: string; zoom: number; fit: boolean } | null>(null);
+
+  useEffect(() => {
+    const fitPaper = () => {
+      const content = treeContentRef.current;
+      if (!content) return;
+      // A4 landscape minus 10 mm margins. Leave 2 mm vertical breathing room.
+      const pixelsPerMm = 96 / 25.4;
+      const zoom = fitTreeZoom(content.offsetWidth, content.offsetHeight, 277 * pixelsPerMm, 188 * pixelsPerMm);
+      content.style.setProperty('--tree-print-zoom', String(zoom));
+    };
+    window.addEventListener('beforeprint', fitPaper);
+    return () => window.removeEventListener('beforeprint', fitPaper);
+  }, []);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setProjecting(document.fullscreenElement === appShellRef.current);
+      setFitMode(true);
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    if ((!fitMode && !printPreview) || loading || loadError || view !== 'tree') return;
+    const stage = treeStageRef.current;
+    const content = treeContentRef.current;
+    if (!stage || !content) return;
+    let frame = 0;
+    const resize = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const style = window.getComputedStyle(stage);
+        const width = stage.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - 4;
+        const height = stage.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - 4;
+        setTreeZoom(fitTreeZoom(content.offsetWidth, content.offsetHeight, width, height));
+        stage.scrollLeft = 0;
+        stage.scrollTop = 0;
+      });
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(stage);
+    observer.observe(content);
+    window.addEventListener('resize', resize);
+    resize();
+    return () => { observer.disconnect(); window.removeEventListener('resize', resize); window.cancelAnimationFrame(frame); };
+  }, [fitMode, printPreview, loading, loadError, view, people, query, selectedBranch, showSpouses, projecting]);
+
+  const openPrintPreview = () => {
+    beforePrintRef.current = { view, branch: selectedBranch, query, zoom: treeZoom, fit: fitMode };
+    closeModal(); setManagingUsers(false);
+    setView('tree'); setSelectedBranch(null); setQuery(''); setPrintPreview(true);
+  };
+  const closePrintPreview = () => {
+    const previous = beforePrintRef.current;
+    setPrintPreview(false);
+    if (previous) {
+      setView(previous.view); setSelectedBranch(previous.branch); setQuery(previous.query);
+      setTreeZoom(previous.zoom); setFitMode(previous.fit);
+    }
+    beforePrintRef.current = null;
+  };
+
+  const changeTreeZoom = (value: number) => {
+    setFitMode(false);
+    setTreeZoom(Math.max(0.05, Math.min(2, value)));
+  };
+  const toggleProjection = async () => {
+    setProjectionError('');
+    try {
+      if (document.fullscreenElement === appShellRef.current) await document.exitFullscreen();
+      else {
+        if (!appShellRef.current?.requestFullscreen) throw new Error('Este navegador não permite tela cheia. Use F11 e Ajustar à tela.');
+        await appShellRef.current.requestFullscreen();
+      }
+    } catch (error) {
+      setProjectionError(error instanceof Error ? error.message : 'Não foi possível abrir a tela cheia. Use F11.');
+    }
+  };
 
   const refresh = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -187,11 +282,16 @@ function App() {
       const tree = await getTree();
       setPeople(Array.isArray(tree.people) ? tree.people.map((person) => ({ ...person, latitude: person.latitude ?? null, longitude: person.longitude ?? null })) : []);
       setCanEdit(isDemo || tree.can_edit === true);
+      setCanManageUsers(!isDemo && tree.can_manage_users === true);
+      setCurrentUser(tree.current_user || '');
       setCsrfToken(tree.csrf_token || '');
       setLoadError('');
     } catch (error) {
       setPeople([]);
       setCanEdit(false);
+      setCanManageUsers(false);
+      setManagingUsers(false);
+      setCurrentUser('');
       setCsrfToken('');
       setActivePerson(null);
       setFormKind(null);
@@ -205,6 +305,7 @@ function App() {
   useEffect(() => {
     if (!canEdit) setFormKind(null);
   }, [canEdit]);
+  useEffect(() => { if (!canManageUsers) setManagingUsers(false); }, [canManageUsers]);
   useEffect(() => {
     const timer = window.setInterval(() => { void refresh(false); }, 15000);
     return () => window.clearInterval(timer);
@@ -317,9 +418,7 @@ function App() {
     if (loading || loadError || view !== 'tree') return;
     const frame = window.requestAnimationFrame(() => {
       const stage = treeStageRef.current;
-      if (stage && stage.scrollWidth > stage.clientWidth) {
-        stage.scrollLeft = (stage.scrollWidth - stage.clientWidth) / 2;
-      }
+      if (stage) stage.scrollLeft = 0;
     });
     return () => window.cancelAnimationFrame(frame);
   }, [loading, loadError, view]);
@@ -471,9 +570,11 @@ function App() {
     if (!activePerson || !formKind) return;
     setFormError('');
     setBusy(true);
-    const form = new FormData(event.currentTarget);
+    const form = new FormData(event.currentTarget, (event.nativeEvent as SubmitEvent).submitter);
     try {
       if (formKind === 'edit') {
+        const addSpouse = form.get('next_action') === 'spouse';
+        if (addSpouse && activePerson.conjuge_atual_id) throw new Error('Esta pessoa já possui um cônjuge vinculado.');
         const nome = String(form.get('nome') || '').trim();
         const sobrenome = String(form.get('sobrenome') || '').trim();
         if (!nome || !sobrenome) throw new Error('Informe nome e sobrenome.');
@@ -492,6 +593,11 @@ function App() {
           mae_id: mother ? Number(mother) : null,
         });
         setSuccessNote(`Dados de ${updated.nome} atualizados.`);
+        if (addSpouse) {
+          setActivePerson(updated);
+          setFormKind('spouse');
+          return;
+        }
         closeModal();
         return;
       }
@@ -510,6 +616,10 @@ function App() {
       const firstParent = String(form.get('pai_id') || '');
       const secondParent = String(form.get('mae_id') || '');
       const spouse = formKind === 'spouse';
+      if (spouse && activePerson.conjuge_atual_id) throw new Error('Esta pessoa já possui um cônjuge vinculado.');
+      if (!spouse && Number(firstParent) !== activePerson.id && Number(secondParent) !== activePerson.id) {
+        throw new Error(`Selecione ${fullName(activePerson)} como pai ou mãe para adicionar seu filho ou filha.`);
+      }
       const newPerson: Omit<Person, 'id'> & { relationship_type?: 'child' | 'spouse' } = {
         nome, sobrenome, sexo: sex || null,
         ramo: activePerson.ramo || Number(form.get('ramo') || 1),
@@ -767,7 +877,7 @@ function App() {
   const totalLiving = people.filter((person) => person.id > 2).length;
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell${printPreview ? ' print-preview' : ''}`} ref={appShellRef}>
       <header className="topbar">
         <a className="brand" href="./" aria-label="Árvore da Família Dembogurski, início">
           <span className="brand-mark"><TreeDeciduous size={22} strokeWidth={1.6} /></span>
@@ -775,22 +885,31 @@ function App() {
         </a>
         <div className="top-actions">
           <button className="button" onClick={exportSvg}><Download size={15} /> Baixar SVG</button>
-          <button className="button primary" onClick={() => { if (view !== 'tree') { setView('tree'); window.setTimeout(() => window.print(), 120); } else window.print(); }}><Printer size={15} /> Imprimir árvore</button>
+          <button className="button primary" disabled={loading || !!loadError || people.length === 0} onClick={openPrintPreview}><Printer size={15} /> Imprimir árvore</button>
         </div>
       </header>
 
       <section className="intro">
-        <div>
-          <div className="eyebrow">Arquivo vivo da família</div>
-          <h1 className="serif">De nossas raízes,<br />aos novos ramos.</h1>
+        <div className="intro-main">
+          <div className="intro-title">
+            <div>
+              <div className="eyebrow">Arquivo vivo da família</div>
+              <h1 className="serif">De nossas raízes,<br />aos novos ramos.</h1>
+            </div>
+          </div>
           <p>Uma história que continua em nós. Encontre seu ramo e descubra as pessoas que fazem parte da nossa família.</p>
         </div>
+        <figure className="intro-crest" title="Brasão simbólico criado para a família Dembogurski, de inspiração polonesa.">
+          <img src={`${import.meta.env.BASE_URL}brasao-dembogurski-v2.png`} alt="Brasão simbólico da família Dembogurski, de inspiração polonesa, com carvalho e colinas." width="1024" height="1024" />
+        </figure>
         <div className="intro-stats" aria-label="Resumo da árvore">
           <div className="stat"><strong>{totalLiving}</strong><span>nomes na árvore</span></div>
           <div className="stat"><strong>5</strong><span>ramos da família</span></div>
-          <div className="stat"><strong><Clock3 size={15} /></strong><span>atualiza a cada 15 s</span></div>
+          <div className="stat stat-refresh"><strong><Clock3 size={15} /></strong><span>atualiza a cada 15 s</span>{canManageUsers && <button type="button" className="icon-button user-admin-toggle" aria-label="Administrar usuários" title="Administrar usuários" onClick={() => { closeModal(); setManagingUsers(true); }}><Settings size={15} /></button>}</div>
         </div>
       </section>
+
+      {printPreview && <div className="print-preview-controls"><div><strong>Impressão · árvore completa</strong><p>Todos os ramos e gerações ajustados a uma página A4 em paisagem.</p></div><div><button type="button" className="button" onClick={closePrintPreview}>Voltar à árvore</button><button type="button" className="button primary" onClick={() => window.print()} disabled={loading || !!loadError}><Printer size={15} />Imprimir</button></div></div>}
 
       <section className="toolbar" aria-label="Ferramentas da árvore">
         <label className="searchbox">
@@ -817,7 +936,21 @@ function App() {
 
       {view === 'map' && !loading && !loadError ? (
         <FamilyMap people={people} selectedBranch={selectedBranch} query={query} onFocusBranch={setBranch} onSetLocation={canEdit ? (person) => { setActivePerson(person); setFormKind('location'); } : undefined} />
-      ) : <section className="tree-stage" aria-label="Árvore genealógica interativa" ref={treeStageRef}>
+      ) : <div className="tree-panel">
+        {!loading && !loadError && <div className="tree-zoom-controls" role="group" aria-label="Zoom e projeção da árvore">
+          <select aria-label="Ramo para projeção" value={selectedBranch ?? ''} onChange={(event) => setBranch(event.target.value ? Number(event.target.value) : null)}>
+            <option value="">Todos os ramos</option>{branchInfo.map((branch) => <option key={branch.id} value={branch.id}>{branch.title}</option>)}
+          </select>
+          <button type="button" className="button small" aria-label="Diminuir zoom da árvore" disabled={treeZoom <= 0.05} onClick={() => changeTreeZoom(treeZoom - 0.1)}><ZoomOut size={16} /></button>
+          <output className="tree-zoom-value" aria-live="polite">{Math.round(treeZoom * 100)}%</output>
+          <button type="button" className="button small" aria-label="Aumentar zoom da árvore" disabled={treeZoom >= 2} onClick={() => changeTreeZoom(treeZoom + 0.1)}><ZoomIn size={16} /></button>
+          <button type="button" className="button small" onClick={() => changeTreeZoom(1)}>100%</button>
+          <button type="button" className={`button small ${fitMode ? 'primary' : ''}`} aria-pressed={fitMode} onClick={() => setFitMode(true)}><Scan size={15} />Ajustar à tela</button>
+          <button type="button" className="button small" aria-pressed={projecting} onClick={() => void toggleProjection()}>{projecting ? <Minimize size={15} /> : <Maximize size={15} />}{projecting ? 'Sair da tela cheia' : 'Projetar'}</button>
+          {projectionError && <span role="alert" className="projection-error">{projectionError}</span>}
+          {projecting && <img className="projection-logo" src={`${import.meta.env.BASE_URL}brasao-dembogurski-v2.png`} alt="Família Dembogurski" width="40" height="40" />}
+        </div>}
+        <section className="tree-stage" aria-label="Árvore genealógica interativa" ref={treeStageRef}>
         {loading ? (
           <div className="loading-wrap" aria-label="Carregando árvore"><div className="loading-card">{Array.from({ length: 5 }, (_, i) => <div className="skeleton" key={i} />)}</div></div>
         ) : loadError ? (
@@ -825,7 +958,7 @@ function App() {
         ) : query && displayBranches.length === 0 ? (
           <div className="empty-search"><CircleHelp size={26} /><h3>Nenhum nome encontrado</h3><p>Confira a escrita ou tente buscar por outro nome.</p><button className="button small" onClick={() => { setQuery(''); searchRef.current?.focus(); }}>Limpar busca</button></div>
         ) : (
-          <div className="tree-content">
+          <div className="tree-content" ref={treeContentRef} style={{ zoom: treeZoom }}>
             <div className="tree-scroll-hint" aria-hidden="true">↔ Quando a árvore ultrapassar a tela, deslize para explorar os ramos</div>
             <div className="ancestor-wrap">
               <div className="ancestor-card">
@@ -846,7 +979,7 @@ function App() {
                   ...branch.roots.map((person) => renderPerson(person, branch.id)),
                 ];
                 return (
-                  <article className="branch-column" data-branch={branch.id} key={branch.id}>
+                  <article className="branch-column" data-branch={branch.id} key={branch.id} style={generationStyle(branchMembersPeople, branchHeadWidth)}>
                     <div className="branch-head">
                       <button
                         className="branch-person-action"
@@ -896,14 +1029,26 @@ function App() {
           </div>
         )}
       </section>
+      </div>
       }
 
       {successNote && <div className="success-toast" role="status"><Check size={16} />{successNote}<button onClick={() => setSuccessNote('')} aria-label="Dispensar"><X size={13} /></button></div>}
 
+      {managingUsers && canManageUsers && (
+        <Modal title="Administrar usuários" kicker="Acesso à árvore · administradores" onClose={() => { if (!usersBusy) setManagingUsers(false); }}>
+          <UserAdministration csrfToken={csrfToken} currentUser={currentUser} onBusyChange={setUsersBusy} onSaved={() => void refresh(false)} />
+        </Modal>
+      )}
+
       {activePerson && !formKind && (
         <Modal title={fullName(activePerson)} kicker={`Ramo ${activePerson.ramo || 'ancestral'} · dados da família`} onClose={closeModal}>
           <div className="person-detail-top">
-            <PersonAvatar person={activePerson} branchId={activePerson.ramo || 1} large />
+            {canEdit ? (
+              <button type="button" className="detail-photo-button" title="Adicionar ou alterar foto" aria-label={`Adicionar ou alterar foto de ${fullName(activePerson)}`} onClick={() => { setFormKind('photo'); setFormError(''); }}>
+                <PersonAvatar person={activePerson} branchId={activePerson.ramo || 1} large />
+                <span className="detail-photo-badge" aria-hidden="true"><Camera size={12} /></span>
+              </button>
+            ) : <PersonAvatar person={activePerson} branchId={activePerson.ramo || 1} large />}
             <div><div className="detail-name">{fullName(activePerson)}</div><div className="detail-meta">{formatSex(activePerson.sexo)}{activePerson.cidade ? ` · ${activePerson.cidade}` : ''}</div></div>
           </div>
           <div className="detail-grid">
@@ -911,7 +1056,7 @@ function App() {
             <div className="detail-field"><label>Falecimento</label><span>{formatDate(activePerson.data_falecimento)}</span></div>
             <div className="detail-field"><label>Pai</label><span>{activePerson.pai_id ? (personMap.get(activePerson.pai_id) ? fullName(personMap.get(activePerson.pai_id)!) : 'Não informado') : 'Não informado'}</span></div>
             <div className="detail-field"><label>Mãe</label><span>{activePerson.mae_id ? (personMap.get(activePerson.mae_id) ? fullName(personMap.get(activePerson.mae_id)!) : 'Não informado') : 'Não informado'}</span></div>
-            <div className="detail-field"><label>Cônjuge</label><span>{activePerson.conjuge_atual_id && personMap.get(activePerson.conjuge_atual_id) ? fullName(personMap.get(activePerson.conjuge_atual_id)!) : 'Não informado'}</span></div>
+            <div className="detail-field"><label>Cônjuge (marido ou esposa)</label><span>{activePerson.conjuge_atual_id && personMap.get(activePerson.conjuge_atual_id) ? fullName(personMap.get(activePerson.conjuge_atual_id)!) : 'Não informado'}</span></div>
             <div className="detail-field"><label>Cidade</label><span>{activePerson.cidade || 'Não informada'}</span></div>
             <div className="detail-field"><label>Localização</label><span>{activePerson.latitude !== null && activePerson.longitude !== null ? `${activePerson.latitude.toFixed(4)}, ${activePerson.longitude.toFixed(4)}` : 'Não definida'}</span></div>
           </div>
@@ -923,11 +1068,8 @@ function App() {
             <button className="action-row" onClick={() => { setFormKind('child'); setFormError(''); }}>
               <span className="action-icon"><UserPlus size={16} /></span><span className="action-copy"><strong>Agregar filho ou filha</strong><small>Adicionar uma nova pessoa neste ramo</small></span><ChevronRight size={16} />
             </button>
-            <button className="action-row" onClick={() => { setFormKind('spouse'); setFormError(''); }}>
-              <span className="action-icon"><Link2 size={16} /></span><span className="action-copy"><strong>Vincular cônjuge</strong><small>Registrar um vínculo conjugal</small></span><ChevronRight size={16} />
-            </button>
-            <button className="action-row" onClick={() => { setFormKind('photo'); setFormError(''); }}>
-              <span className="action-icon"><Camera size={16} /></span><span className="action-copy"><strong>Subir ou cambiar foto</strong><small>Atualizar o retrato desta pessoa</small></span><ChevronRight size={16} />
+            <button className="action-row" disabled={!!activePerson.conjuge_atual_id} onClick={() => { setFormKind('spouse'); setFormError(''); }}>
+              <span className="action-icon"><Link2 size={16} /></span><span className="action-copy"><strong>Adicionar cônjuge</strong><small>{activePerson.conjuge_atual_id ? 'Esta pessoa já possui um cônjuge vinculado' : 'Cadastrar marido ou esposa e vincular à pessoa'}</small></span><ChevronRight size={16} />
             </button>
             <button className="action-row" onClick={() => { setFormKind('location'); setFormError(''); }}>
               <span className="action-icon"><MapPin size={16} /></span><span className="action-copy"><strong>Definir localização</strong><small>Compartilhada com quem vê o mapa da família</small></span><ChevronRight size={16} />
@@ -975,7 +1117,7 @@ function App() {
 
       {activePerson && formKind && formKind !== 'location' && formKind !== 'delete' && (
         <Modal
-          title={formKind === 'edit' ? 'Editar dados da pessoa' : formKind === 'child' ? 'Agregar filho ou filha' : formKind === 'spouse' ? 'Vincular cônjuge' : 'Foto de família'}
+          title={formKind === 'edit' ? 'Editar dados da pessoa' : formKind === 'child' ? 'Adicionar filho ou filha' : formKind === 'spouse' ? 'Adicionar cônjuge' : 'Foto de família'}
           kicker={`${fullName(activePerson)} · ${formKind === 'photo' ? 'retrato' : formKind === 'edit' ? 'atualizar cadastro' : 'novo registro'}`}
           onClose={() => setFormKind(null)}
         >
@@ -987,13 +1129,25 @@ function App() {
               <div className="modal-actions"><button type="button" className="button" onClick={() => setFormKind(null)}>Voltar</button><button className="button primary" disabled={busy}>{busy ? 'Enviando…' : 'Salvar foto'}</button></div>
             </form>
           ) : formKind === 'edit' ? (
-            <form onSubmit={submitPersonForm}>
+            <form onSubmit={submitPersonForm} onKeyDown={(event) => {
+              if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {
+                event.preventDefault();
+                event.currentTarget.requestSubmit();
+              }
+            }}>
               <p className="form-hint">Atualize qualquer dado que esteja incompleto ou incorreto. Datas, cidade, pais e observações são opcionais.</p>
               <div className="form-grid">
                 <div className="field"><label htmlFor="edit-nome">Nome *</label><input id="edit-nome" name="nome" defaultValue={activePerson.nome} autoFocus required maxLength={100} /></div>
                 <div className="field"><label htmlFor="edit-sobrenome">Sobrenome *</label><input id="edit-sobrenome" name="sobrenome" defaultValue={activePerson.sobrenome} required maxLength={150} /></div>
                 <div className="field"><label htmlFor="edit-sexo">Sexo</label><select id="edit-sexo" name="sexo" defaultValue={activePerson.sexo === 'M' || activePerson.sexo === 'Masculino' ? 'M' : activePerson.sexo === 'F' || activePerson.sexo === 'Feminino' ? 'F' : activePerson.sexo || 'Nao informado'}><option value="Nao informado">Não informado</option><option value="F">Feminino</option><option value="M">Masculino</option><option value="Outro">Outro</option></select></div>
                 <div className="field"><label htmlFor="edit-cidade">Cidade</label><input id="edit-cidade" name="cidade" defaultValue={activePerson.cidade || ''} placeholder="Ex.: Curitiba, PR" maxLength={160} /></div>
+                <div className="field full edit-spouse">
+                  <label>Cônjuge (marido ou esposa)</label>
+                  {activePerson.conjuge_atual_id ? <span>{personMap.get(activePerson.conjuge_atual_id) ? fullName(personMap.get(activePerson.conjuge_atual_id)!) : 'Cônjuge vinculado'}</span> : <>
+                    <button type="submit" name="next_action" value="spouse" className="button small" disabled={busy}><UserPlus size={15} />Salvar e adicionar cônjuge</button>
+                    <small>Salva as alterações desta pessoa e abre o cadastro do marido ou da esposa.</small>
+                  </>}
+                </div>
                 <div className="field"><label htmlFor="edit-pai">Pai biológico</label><select id="edit-pai" name="pai_id" defaultValue={activePerson.pai_id ? String(activePerson.pai_id) : ''}><option value="">Não informado</option>{people.filter((person) => person.id !== activePerson.id && (person.sexo === 'M' || person.sexo === 'Masculino' || person.id === activePerson.pai_id)).map((person) => <option value={person.id} key={person.id}>{fullName(person)}</option>)}</select></div>
                 <div className="field"><label htmlFor="edit-mae">Mãe biológica</label><select id="edit-mae" name="mae_id" defaultValue={activePerson.mae_id ? String(activePerson.mae_id) : ''}><option value="">Não informado</option>{people.filter((person) => person.id !== activePerson.id && (person.sexo === 'F' || person.sexo === 'Feminino' || person.id === activePerson.mae_id)).map((person) => <option value={person.id} key={person.id}>{fullName(person)}</option>)}</select></div>
                 <div className="field"><label htmlFor="edit-nascimento">Data de nascimento</label><input id="edit-nascimento" name="data_nascimento" type="date" defaultValue={activePerson.data_nascimento?.slice(0, 10) || ''} /></div>
@@ -1013,8 +1167,8 @@ function App() {
                 <div className="field"><label htmlFor="cidade">Cidade</label><input id="cidade" name="cidade" placeholder="Ex.: Curitiba, PR" maxLength={120} /></div>
                 {formKind === 'child' && (
                   <>
-                    <div className="field"><label htmlFor="pai_id">Pai biológico</label><select id="pai_id" name="pai_id" defaultValue={activePerson.sexo === 'M' || activePerson.sexo === 'Masculino' ? String(activePerson.id) : ''}><option value="">Não informado</option>{people.filter((person) => person.sexo === 'M' || person.sexo === 'Masculino').map((person) => <option value={person.id} key={person.id}>{fullName(person)}</option>)}</select></div>
-                    <div className="field"><label htmlFor="mae_id">Mãe biológica</label><select id="mae_id" name="mae_id" defaultValue={activePerson.sexo === 'F' || activePerson.sexo === 'Feminino' ? String(activePerson.id) : ''}><option value="">Não informado</option>{people.filter((person) => person.sexo === 'F' || person.sexo === 'Feminino').map((person) => <option value={person.id} key={person.id}>{fullName(person)}</option>)}</select></div>
+                    <div className="field"><label htmlFor="pai_id">Pai biológico</label><select id="pai_id" name="pai_id" defaultValue={activePerson.sexo === 'M' || activePerson.sexo === 'Masculino' ? String(activePerson.id) : ''}><option value="">Não informado</option>{people.filter((person) => person.id === activePerson.id || person.sexo === 'M' || person.sexo === 'Masculino').map((person) => <option value={person.id} key={person.id}>{fullName(person)}</option>)}</select></div>
+                    <div className="field"><label htmlFor="mae_id">Mãe biológica</label><select id="mae_id" name="mae_id" defaultValue={activePerson.sexo === 'F' || activePerson.sexo === 'Feminino' ? String(activePerson.id) : ''}><option value="">Não informado</option>{people.filter((person) => person.id === activePerson.id || person.sexo === 'F' || person.sexo === 'Feminino').map((person) => <option value={person.id} key={person.id}>{fullName(person)}</option>)}</select></div>
                   </>
                 )}
                 <div className="field"><label htmlFor="data_nascimento">Data de nascimento</label><input id="data_nascimento" name="data_nascimento" type="date" /></div>
@@ -1077,6 +1231,37 @@ function LocationForm({ person, onCancel, onSave, busy, error }: {
   busy: boolean;
   error: string;
 }) {
+  const [placeQuery, setPlaceQuery] = useState(person.cidade ?? '');
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchMessage, setSearchMessage] = useState('');
+  const [selectedPlace, setSelectedPlace] = useState('');
+  const [latitudeValue, setLatitudeValue] = useState(String(person.latitude ?? ''));
+  const [longitudeValue, setLongitudeValue] = useState(String(person.longitude ?? ''));
+  const requestRef = useRef<AbortController | null>(null);
+  useEffect(() => () => requestRef.current?.abort(), []);
+  const findPlaces = async () => {
+    if (searching || busy) return;
+    requestRef.current?.abort();
+    const request = new AbortController();
+    requestRef.current = request;
+    const timeout = window.setTimeout(() => request.abort(), 15000);
+    setSearching(true);
+    setPlaces([]);
+    setSearchMessage('');
+    try {
+      const results = await searchPlaces(placeQuery, request.signal);
+      if (requestRef.current !== request) return;
+      setPlaces(results);
+      if (!results.length) setSearchMessage('Nenhum lugar encontrado. Tente incluir o estado ou o país.');
+    } catch (searchError) {
+      if (requestRef.current !== request) return;
+      setSearchMessage(request.signal.aborted ? 'A busca demorou demais. Tente novamente.' : searchError instanceof Error ? searchError.message : 'Não foi possível buscar. Verifique sua conexão.');
+    } finally {
+      window.clearTimeout(timeout);
+      if (requestRef.current === request) setSearching(false);
+    }
+  };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -1088,10 +1273,26 @@ function LocationForm({ person, onCancel, onSave, busy, error }: {
   return (
     <form onSubmit={submit}>
       <div className="privacy-note"><MapPin size={16} /><span>Esta localização ficará visível para outras pessoas que acessarem o mapa compartilhado da família.</span></div>
-      <p className="form-hint location-help">Informe coordenadas decimais. Exemplo: Curitiba <strong>−25.4284, −49.2733</strong>.</p>
+      <div className="field place-search">
+        <label htmlFor="place-query">Buscar cidade ou lugar</label>
+        <div className="place-search-controls">
+          <input id="place-query" value={placeQuery} maxLength={200} placeholder="Ex.: Curitiba, Brasil ou Encarnación, Paraguay" disabled={busy}
+            onChange={(event) => { requestRef.current?.abort(); requestRef.current = null; setSearching(false); setPlaceQuery(event.target.value); setPlaces([]); setSearchMessage(''); }}
+            onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void findPlaces(); } }} />
+          <button type="button" className="button" disabled={searching || busy || placeQuery.trim().length < 3} onClick={() => void findPlaces()}><Search size={15} />{searching ? 'Buscando…' : 'Buscar'}</button>
+        </div>
+        <small>Busque pelo nome e escolha um resultado para preencher as coordenadas.</small>
+        <div role="status" aria-live="polite">{searching ? 'Buscando lugares…' : searchMessage}</div>
+        {places.length > 0 && <ul className="place-results" aria-label="Lugares encontrados">{places.map((place, index) => <li key={`${place.latitude},${place.longitude},${index}`}>
+          <button type="button" disabled={busy} onClick={() => { setLatitudeValue(String(place.latitude)); setLongitudeValue(String(place.longitude)); setSelectedPlace(place.label); setPlaces([]); setSearchMessage('Coordenadas preenchidas. Clique em Salvar localização para confirmar.'); }}><MapPin size={15} /><span>{place.label}</span></button>
+        </li>)}</ul>}
+        {selectedPlace && <p className="place-selected">Local selecionado: {selectedPlace}</p>}
+        <small className="place-attribution">Busca: <a href="https://github.com/komoot/photon" target="_blank" rel="noreferrer">Photon</a> · © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a></small>
+      </div>
+      <p className="form-hint location-help">Você também pode informar ou ajustar as coordenadas manualmente.</p>
       <div className="form-grid">
-        <div className="field"><label htmlFor="person-latitude">Latitude *</label><input id="person-latitude" name="latitude" type="number" step="any" min="-90" max="90" defaultValue={person.latitude ?? ''} placeholder="-25.4284" required /></div>
-        <div className="field"><label htmlFor="person-longitude">Longitude *</label><input id="person-longitude" name="longitude" type="number" step="any" min="-180" max="180" defaultValue={person.longitude ?? ''} placeholder="-49.2733" required /></div>
+        <div className="field"><label htmlFor="person-latitude">Latitude *</label><input id="person-latitude" name="latitude" type="number" step="any" min="-90" max="90" value={latitudeValue} onChange={(event) => { setLatitudeValue(event.target.value); setSelectedPlace(''); }} disabled={busy} placeholder="-25.4284" required /></div>
+        <div className="field"><label htmlFor="person-longitude">Longitude *</label><input id="person-longitude" name="longitude" type="number" step="any" min="-180" max="180" value={longitudeValue} onChange={(event) => { setLongitudeValue(event.target.value); setSelectedPlace(''); }} disabled={busy} placeholder="-49.2733" required /></div>
       </div>
       {error && <div className="form-error" role="alert">{error}</div>}
       <div className="modal-actions"><button type="button" className="button" onClick={onCancel}>Voltar</button><button className="button primary" disabled={busy}><MapPin size={15} />{busy ? 'Salvando…' : 'Salvar localização'}</button></div>

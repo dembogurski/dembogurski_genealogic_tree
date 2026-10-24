@@ -1,0 +1,44 @@
+.portada-return {
+  position: fixed;
+  z-index: 35;
+  right: 18px;
+  bottom: 18px;
+  display: inline-flex;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(49, 90, 62, .22);
+  border-radius: 999px;
+  background: rgba(250, 248, 239, .94);
+  color: #315a3e;
+  box-shadow: 0 8px 26px rgba(35, 69, 51, .14);
+  backdrop-filter: blur(8px);
+  align-items: center;
+  gap: 7px;
+  font: 600 11px 'DM Sans', sans-serif;
+  text-decoration: none;
+  transition: background-color .18s, border-color .18s, transform .18s;
+}
+
+.portada-return:hover {
+  border-color: rgba(49, 90, 62, .45);
+  background: #fffdf7;
+  transform: translateY(-1px);
+}
+
+.portada-return:focus-visible {
+  outline: 3px solid rgba(85, 127, 92, .42);
+  outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+  .portada-return {
+    right: 12px;
+    bottom: 12px;
+  }
+}
+
+@media print {
+  .portada-return {
+    display: none !important;
+  }
+}

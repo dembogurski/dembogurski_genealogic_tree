@@ -43,8 +43,13 @@ await writeFile(
     <title>Árvore da Família Dembogurski</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg">
     <link rel="stylesheet" href="./styles.css">
+    <link rel="stylesheet" href="./project-nav.css">
   </head>
   <body>
+    <a class="portada-return" href="../" aria-label="Voltar à portada da família">
+      <span aria-hidden="true">←</span>
+      <span>Portada</span>
+    </a>
     <div id="root"></div>
     <script type="module" src="./app.js"></script>
   </body>

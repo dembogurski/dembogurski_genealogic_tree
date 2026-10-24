@@ -29,8 +29,8 @@ CREATE TABLE IF NOT EXISTS pessoas (
   CONSTRAINT fk_pessoas_mae FOREIGN KEY (madre_id) REFERENCES pessoas(id) ON DELETE SET NULL,
   CONSTRAINT fk_pessoas_conjuge FOREIGN KEY (conyuge_actual_id) REFERENCES pessoas(id) ON DELETE SET NULL,
   CONSTRAINT chk_pessoas_ramo CHECK (ramo BETWEEN 0 AND 5),
-  CONSTRAINT chk_pessoas_pais CHECK (padre_id IS NULL OR madre_id IS NULL OR padre_id <> madre_id),
-  CONSTRAINT chk_pessoas_conjuge CHECK (conyuge_actual_id IS NULL OR conyuge_actual_id <> id),
+  -- Validações de parentesco são feitas pela API. MySQL não permite estes
+  -- CHECKs em colunas usadas por FOREIGN KEY com ON DELETE SET NULL.
   CONSTRAINT chk_pessoas_coords_pair CHECK ((latitude IS NULL AND longitude IS NULL) OR (latitude IS NOT NULL AND longitude IS NOT NULL)),
   CONSTRAINT chk_pessoas_latitude CHECK (latitude IS NULL OR latitude BETWEEN -90 AND 90),
   CONSTRAINT chk_pessoas_longitude CHECK (longitude IS NULL OR longitude BETWEEN -180 AND 180)

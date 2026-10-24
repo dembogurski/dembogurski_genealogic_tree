@@ -1,0 +1,8 @@
+# Copie para /etc/apache2/dembogurski/database.conf e altere sem versionar.
+SetEnv DB_HOST 127.0.0.1
+SetEnv DB_PORT 3306
+SetEnv DB_NAME familia_dembogurski
+SetEnv DB_USER dembogurski_app
+SetEnv DB_PASS TROCAR_POR_SENHA_FORTE
+SetEnv TREE_ORGANIZERS admin
+SetEnv TREE_USERS_DIR /etc/apache2/dembogurski

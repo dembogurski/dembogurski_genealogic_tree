@@ -15,6 +15,23 @@ node_modules
 /.phpunit.cache/
 /.phpunit.result.cache
 
+# local secrets and runtime data
+.env
+.env.*
+!.env.example
+acceso-local.txt
+users.htpasswd
+users-roles.json
+users.lock
+database.conf
+/*.npmrc
+!/.npmrc
+
+# uploaded family content and local visual previews
+/artifacts/arvore-dembogurski/apache/uploads/*
+!/artifacts/arvore-dembogurski/apache/uploads/.htaccess
+/portada/previews/
+
 # IDEs and editors
 /.idea
 .project
