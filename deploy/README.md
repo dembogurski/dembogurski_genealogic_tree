@@ -26,6 +26,9 @@ O instalador usa primeiro `root` pelo socket local do MariaDB. Em servidores
 compartilhados que não permitem esse acesso, usa automaticamente
 `/etc/mysql/debian.cnf` para criar o banco e o usuário exclusivo
 `dembogurski_app`. Nenhuma senha de banco é colocada no Git ou num `.env`.
+Se nenhuma dessas opções funcionar, solicita de forma oculta o usuário e a
+senha de uma conta administrativa do MariaDB. Essas credenciais não são
+armazenadas.
 
 ## 1. Gerar o pacote
 

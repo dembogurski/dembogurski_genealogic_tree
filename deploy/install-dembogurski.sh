@@ -25,9 +25,25 @@ elif [[ -r /etc/mysql/debian.cnf ]] \
     -e "SELECT 1" >/dev/null 2>&1; then
   MARIADB_ADMIN=(mariadb --defaults-file=/etc/mysql/debian.cnf)
 else
-  echo "Não foi possível obter acesso administrativo ao MariaDB." >&2
-  echo "Crie o banco e o usuário manualmente e depois execute novamente." >&2
-  exit 1
+  echo "É necessário autenticar uma conta administrativa do MariaDB."
+  echo "Ela será usada somente para criar o banco e o usuário do projeto."
+  read -r -p "Usuário administrativo [root]: " mariadb_admin_user
+  mariadb_admin_user="${mariadb_admin_user:-root}"
+  read -r -s -p "Senha administrativa do MariaDB: " mariadb_admin_password
+  echo
+
+  if [[ -z "${mariadb_admin_password}" ]]; then
+    echo "A senha administrativa não foi informada." >&2
+    exit 1
+  fi
+
+  export MYSQL_PWD="${mariadb_admin_password}"
+  MARIADB_ADMIN=(mariadb --no-defaults --protocol=socket --user="${mariadb_admin_user}")
+  if ! "${MARIADB_ADMIN[@]}" -e "SELECT 1" >/dev/null 2>&1; then
+    unset MYSQL_PWD mariadb_admin_password
+    echo "As credenciais administrativas do MariaDB são inválidas." >&2
+    exit 1
+  fi
 fi
 
 for required in \
@@ -81,6 +97,7 @@ chown root:root "${DATABASE_CONFIG}"
 chmod 600 "${DATABASE_CONFIG}"
 
 "${MARIADB_ADMIN[@]}" "${DB_NAME}" < "${TREE_DIR}/schema.sql"
+unset MYSQL_PWD mariadb_admin_password 2>/dev/null || true
 
 if [[ ! -f "${HTPASSWD_FILE}" ]]; then
   echo
