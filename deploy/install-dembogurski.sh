@@ -16,7 +16,19 @@ SITE_CONFIG="/etc/apache2/sites-available/dembogurski.com.conf"
 DB_NAME="familia_dembogurski"
 DB_USER="dembogurski_app"
 DB_HOST="127.0.0.1"
-MARIADB_ADMIN=(mariadb --no-defaults --protocol=socket --user=root)
+
+if mariadb --no-defaults --protocol=socket --user=root \
+  -e "SELECT 1" >/dev/null 2>&1; then
+  MARIADB_ADMIN=(mariadb --no-defaults --protocol=socket --user=root)
+elif [[ -r /etc/mysql/debian.cnf ]] \
+  && mariadb --defaults-file=/etc/mysql/debian.cnf \
+    -e "SELECT 1" >/dev/null 2>&1; then
+  MARIADB_ADMIN=(mariadb --defaults-file=/etc/mysql/debian.cnf)
+else
+  echo "Não foi possível obter acesso administrativo ao MariaDB." >&2
+  echo "Crie o banco e o usuário manualmente e depois execute novamente." >&2
+  exit 1
+fi
 
 for required in \
   "${LANDING_DIR}/index.html" \

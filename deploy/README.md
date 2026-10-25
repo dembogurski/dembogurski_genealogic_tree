@@ -22,6 +22,11 @@ O instalador cria somente o virtual host de `dembogurski.com`, preserva os
 outros domínios, gera uma senha aleatória para o banco e pede a senha do
 administrador da árvore. Não execute `a2dissite 000-default`.
 
+O instalador usa primeiro `root` pelo socket local do MariaDB. Em servidores
+compartilhados que não permitem esse acesso, usa automaticamente
+`/etc/mysql/debian.cnf` para criar o banco e o usuário exclusivo
+`dembogurski_app`. Nenhuma senha de banco é colocada no Git ou num `.env`.
+
 ## 1. Gerar o pacote
 
 Na raiz do projeto:
