@@ -10,6 +10,7 @@ import { compareFamilyOrder } from './family-order';
 import { type Place, searchPlaces } from './location-search';
 import { fitTreeZoom } from './tree-zoom';
 import UserAdministration from './UserAdministration';
+import { CircleMarker, MapContainer, TileLayer, useMapEvents } from 'react-leaflet';
 
 export type Person = {
   id: number;
@@ -1240,8 +1241,14 @@ function App() {
                 )}
                 <div className="field"><label htmlFor="data_nascimento">Data de nascimento</label><input id="data_nascimento" name="data_nascimento" type="date" /></div>
                 <div className="field"><label htmlFor="data_falecimento">Data de falecimento</label><input id="data_falecimento" name="data_falecimento" type="date" /></div>
-                <div className="field"><label htmlFor="latitude">Latitude</label><input id="latitude" name="latitude" type="number" step="any" placeholder="-25.4284" /></div>
-                <div className="field"><label htmlFor="longitude">Longitude</label><input id="longitude" name="longitude" type="number" step="any" placeholder="-49.2733" /></div>
+                {formKind === 'child'
+                  ? <ChildLocationPicker />
+                  : (
+                    <>
+                      <div className="field"><label htmlFor="latitude">Latitude</label><input id="latitude" name="latitude" type="number" step="any" placeholder="-25.4284" /></div>
+                      <div className="field"><label htmlFor="longitude">Longitude</label><input id="longitude" name="longitude" type="number" step="any" placeholder="-49.2733" /></div>
+                    </>
+                  )}
                 <div className="field full"><label htmlFor="observacoes">Observações e memórias</label><textarea id="observacoes" name="observacoes" placeholder="Uma lembrança, história ou detalhe que vale guardar…" maxLength={1000} /></div>
               </div>
               {formError && <div className="form-error" role="alert">{formError}</div>}
@@ -1291,6 +1298,79 @@ function formatDate(value: string | null) {
   if (!value) return 'Não informada';
   const date = new Date(`${value}T12:00:00`);
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }).format(date);
+}
+
+function MapClickSelector({ onPick }: { onPick: (latitude: number, longitude: number) => void }) {
+  useMapEvents({
+    click(event) {
+      onPick(event.latlng.lat, event.latlng.lng);
+    },
+  });
+  return null;
+}
+
+function ChildLocationPicker() {
+  const [mapOpen, setMapOpen] = useState(false);
+  const [latitudeValue, setLatitudeValue] = useState('');
+  const [longitudeValue, setLongitudeValue] = useState('');
+  const latitude = Number(latitudeValue);
+  const longitude = Number(longitudeValue);
+  const hasPoint = Number.isFinite(latitude) && Number.isFinite(longitude)
+    && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
+
+  const selectPoint = (nextLatitude: number, nextLongitude: number) => {
+    setLatitudeValue(nextLatitude.toFixed(6));
+    setLongitudeValue(nextLongitude.toFixed(6));
+  };
+
+  const clearPoint = () => {
+    setLatitudeValue('');
+    setLongitudeValue('');
+  };
+
+  return (
+    <div className="child-location-picker field full">
+      <div className="child-location-heading">
+        <div>
+          <label>Localização</label>
+          <small>Clique no mapa para marcar o lugar ou informe as coordenadas abaixo.</small>
+        </div>
+        <div className="child-location-actions">
+          {hasPoint && <button type="button" className="button small" onClick={clearPoint}>Limpar</button>}
+          <button type="button" className="button small" onClick={() => setMapOpen((open) => !open)}>
+            <MapPin size={14} />
+            {mapOpen ? 'Fechar mapa' : 'Selecionar no mapa'}
+          </button>
+        </div>
+      </div>
+      {mapOpen && (
+        <div className="coordinate-map-frame">
+          <MapContainer center={hasPoint ? [latitude, longitude] : [-25.3, -57.5]} zoom={hasPoint ? 9 : 5} scrollWheelZoom className="coordinate-map">
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            <MapClickSelector onPick={selectPoint} />
+            {hasPoint && <CircleMarker center={[latitude, longitude]} radius={8} pathOptions={{ color: '#fffdf5', weight: 3, fillColor: '#8d2837', fillOpacity: 1 }} />}
+          </MapContainer>
+          <div className="coordinate-map-caption">
+            <span>{hasPoint ? 'Ponto selecionado' : 'Clique no mapa para escolher o local'}</span>
+            <span>OpenStreetMap</span>
+          </div>
+        </div>
+      )}
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor="new-child-latitude">Latitude</label>
+          <input id="new-child-latitude" name="latitude" type="number" step="any" value={latitudeValue} onChange={(event) => setLatitudeValue(event.target.value)} placeholder="-25.4284" />
+        </div>
+        <div className="field">
+          <label htmlFor="new-child-longitude">Longitude</label>
+          <input id="new-child-longitude" name="longitude" type="number" step="any" value={longitudeValue} onChange={(event) => setLongitudeValue(event.target.value)} placeholder="-49.2733" />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function LocationForm({ person, onCancel, onSave, busy, error }: {
