@@ -357,6 +357,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .action-copy strong { display:block;font-size:12px; }
 .action-copy small { display:block;margin-top:3px;color:#88897b;font-size:10px; }
 .form-grid { display:grid;grid-template-columns:1fr 1fr;gap:14px; }
+.new-parent-panel { padding:12px 14px;border:1px dashed #c8c1af;border-radius:8px;background:#f7f3e8; }
+.new-parent-panel summary { color:#3e5b43;font-size:12px;font-weight:600;cursor:pointer; }
+.new-parent-panel[open] summary { margin-bottom:8px; }
+.new-parent-panel .form-hint { margin:0 0 12px; }
 .field { display:flex;flex-direction:column;gap:6px; }
 .field.full { grid-column:1/-1; }
 .field label { color:#65705e;font-size:10px;font-weight:700;letter-spacing:.06em; }

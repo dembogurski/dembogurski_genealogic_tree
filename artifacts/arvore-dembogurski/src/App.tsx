@@ -468,7 +468,7 @@ function App() {
     return normalized;
   };
 
-  const saveLocation = async (personId: number, latitude: number, longitude: number) => {
+  const saveLocation = async (personId: number, latitude: number | null, longitude: number | null) => {
     if (!canEdit) throw new Error('Somente organizadores autorizados podem fazer alterações.');
     if (isDemo) {
       const next = localTree().people.map((person) => person.id === personId ? { ...person, latitude, longitude } : person);
@@ -482,7 +482,7 @@ function App() {
       body: JSON.stringify({ person_id: personId, latitude, longitude }),
     });
     if (!response.ok) throw new Error(await responseError(response));
-    const coordinates = await response.json() as { latitude: number; longitude: number };
+    const coordinates = await response.json() as { latitude: number | null; longitude: number | null };
     setPeople((current) => current.map((person) => person.id === personId ? { ...person, ...coordinates } : person));
   };
 
@@ -616,10 +616,49 @@ function App() {
       const sobrenome = String(form.get('sobrenome') || '').trim();
       if (!nome || !sobrenome) throw new Error('Informe nome e sobrenome.');
       const sex = String(form.get('sexo') || '');
-      const firstParent = String(form.get('pai_id') || '');
-      const secondParent = String(form.get('mae_id') || '');
+      let firstParent = String(form.get('pai_id') || '');
+      let secondParent = String(form.get('mae_id') || '');
       const spouse = formKind === 'spouse';
       if (spouse && activePerson.conjuge_atual_id) throw new Error('Esta pessoa já possui um cônjuge vinculado.');
+      let newParentName = '';
+      if (!spouse) {
+        newParentName = String(form.get('new_parent_nome') || '').trim();
+        if (newParentName) {
+          if (activePerson.conjuge_atual_id) {
+            throw new Error('Esta pessoa já possui um cônjuge vinculado. Escolha o outro progenitor na lista.');
+          }
+          const parentRole = String(form.get('new_parent_role') || 'mother');
+          const activeIsFather = activePerson.sexo === 'M' || activePerson.sexo === 'Masculino';
+          const activeIsMother = activePerson.sexo === 'F' || activePerson.sexo === 'Feminino';
+          if ((parentRole === 'father' && activeIsFather) || (parentRole === 'mother' && activeIsMother)) {
+            throw new Error(`Selecione o parentesco que falta: ${activeIsFather ? 'mãe' : 'pai'}.`);
+          }
+          const parentSurname = String(form.get('new_parent_sobrenome') || '').trim() || activePerson.sobrenome;
+          const createdParent = await savePerson({
+            nome: newParentName,
+            sobrenome: parentSurname,
+            sexo: parentRole === 'father' ? 'Masculino' : 'Feminino',
+            ramo: activePerson.ramo || Number(form.get('ramo') || 1),
+            data_nascimento: null,
+            data_falecimento: null,
+            cidade: null,
+            observacoes: null,
+            pai_id: null,
+            mae_id: null,
+            conjuge_atual_id: activePerson.id,
+            foto_url: null,
+            latitude: null,
+            longitude: null,
+            relationship_type: 'spouse',
+          });
+          if (parentRole === 'father') firstParent = String(createdParent.id);
+          else secondParent = String(createdParent.id);
+          setPeople((current) => current.map((person) => person.id === activePerson.id
+            ? { ...person, conjuge_atual_id: createdParent.id }
+            : person));
+          setActivePerson((current) => current ? { ...current, conjuge_atual_id: createdParent.id } : current);
+        }
+      }
       if (!spouse && Number(firstParent) !== activePerson.id && Number(secondParent) !== activePerson.id) {
         throw new Error(`Selecione ${fullName(activePerson)} como pai ou mãe para adicionar seu filho ou filha.`);
       }
@@ -646,7 +685,9 @@ function App() {
       } else {
         await savePerson(newPerson);
       }
-      setSuccessNote(`${nome} foi adicionado à árvore.`);
+      setSuccessNote(newParentName
+        ? `${nome} e ${newParentName} foram adicionados à árvore.`
+        : `${nome} foi adicionado à árvore.`);
       closeModal();
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Não foi possível salvar os dados.');
@@ -1172,6 +1213,29 @@ function App() {
                   <>
                     <div className="field"><label htmlFor="pai_id">Pai biológico</label><select id="pai_id" name="pai_id" defaultValue={activePerson.sexo === 'M' || activePerson.sexo === 'Masculino' ? String(activePerson.id) : ''}><option value="">Não informado</option>{people.filter((person) => person.id === activePerson.id || person.sexo === 'M' || person.sexo === 'Masculino').map((person) => <option value={person.id} key={person.id}>{fullName(person)}</option>)}</select></div>
                     <div className="field"><label htmlFor="mae_id">Mãe biológica</label><select id="mae_id" name="mae_id" defaultValue={activePerson.sexo === 'F' || activePerson.sexo === 'Feminino' ? String(activePerson.id) : ''}><option value="">Não informado</option>{people.filter((person) => person.id === activePerson.id || person.sexo === 'F' || person.sexo === 'Feminino').map((person) => <option value={person.id} key={person.id}>{fullName(person)}</option>)}</select></div>
+                    {!activePerson.conjuge_atual_id && (
+                      <details className="new-parent-panel field full">
+                        <summary>O pai ou a mãe não está na lista? Cadastrar agora</summary>
+                        <p className="form-hint">A nova pessoa será vinculada como cônjuge de {fullName(activePerson)} e como progenitor desta criança.</p>
+                        <div className="form-grid">
+                          <div className="field">
+                            <label htmlFor="new_parent_role">Parentesco</label>
+                            <select id="new_parent_role" name="new_parent_role" defaultValue={activePerson.sexo === 'F' || activePerson.sexo === 'Feminino' ? 'father' : 'mother'}>
+                              <option value="mother">Mãe</option>
+                              <option value="father">Pai</option>
+                            </select>
+                          </div>
+                          <div className="field">
+                            <label htmlFor="new_parent_nome">Nome</label>
+                            <input id="new_parent_nome" name="new_parent_nome" maxLength={80} placeholder="Opcional se já estiver na lista" />
+                          </div>
+                          <div className="field full">
+                            <label htmlFor="new_parent_sobrenome">Sobrenome</label>
+                            <input id="new_parent_sobrenome" name="new_parent_sobrenome" maxLength={100} placeholder={activePerson.sobrenome} />
+                          </div>
+                        </div>
+                      </details>
+                    )}
                   </>
                 )}
                 <div className="field"><label htmlFor="data_nascimento">Data de nascimento</label><input id="data_nascimento" name="data_nascimento" type="date" /></div>
@@ -1197,7 +1261,9 @@ function App() {
               setBusy(true);
               try {
                 await saveLocation(activePerson.id, latitude, longitude);
-                setSuccessNote(`Localização de ${activePerson.nome} atualizada.`);
+                setSuccessNote(latitude === null
+                  ? `Localização de ${activePerson.nome} removida.`
+                  : `Localização de ${activePerson.nome} atualizada.`);
                 closeModal();
               } catch (error) {
                 setFormError(error instanceof Error ? error.message : 'Não foi possível salvar a localização.');
@@ -1230,7 +1296,7 @@ function formatDate(value: string | null) {
 function LocationForm({ person, onCancel, onSave, busy, error }: {
   person: Person;
   onCancel: () => void;
-  onSave: (latitude: number, longitude: number) => Promise<void>;
+  onSave: (latitude: number | null, longitude: number | null) => Promise<void>;
   busy: boolean;
   error: string;
 }) {
@@ -1273,6 +1339,10 @@ function LocationForm({ person, onCancel, onSave, busy, error }: {
     if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return;
     void onSave(latitude, longitude);
   };
+  const removeLocation = () => {
+    if (!window.confirm(`Remover latitude e longitude de ${person.nome}?`)) return;
+    void onSave(null, null);
+  };
   return (
     <form onSubmit={submit}>
       <div className="privacy-note"><MapPin size={16} /><span>Esta localização ficará visível para outras pessoas que acessarem o mapa compartilhado da família.</span></div>
@@ -1298,7 +1368,13 @@ function LocationForm({ person, onCancel, onSave, busy, error }: {
         <div className="field"><label htmlFor="person-longitude">Longitude *</label><input id="person-longitude" name="longitude" type="number" step="any" min="-180" max="180" value={longitudeValue} onChange={(event) => { setLongitudeValue(event.target.value); setSelectedPlace(''); }} disabled={busy} placeholder="-49.2733" required /></div>
       </div>
       {error && <div className="form-error" role="alert">{error}</div>}
-      <div className="modal-actions"><button type="button" className="button" onClick={onCancel}>Voltar</button><button className="button primary" disabled={busy}><MapPin size={15} />{busy ? 'Salvando…' : 'Salvar localização'}</button></div>
+      <div className="modal-actions">
+        <button type="button" className="button" onClick={onCancel}>Voltar</button>
+        {person.latitude !== null && person.longitude !== null && (
+          <button type="button" className="button danger" disabled={busy} onClick={removeLocation}>Remover localização</button>
+        )}
+        <button className="button primary" disabled={busy}><MapPin size={15} />{busy ? 'Salvando…' : 'Salvar localização'}</button>
+      </div>
     </form>
   );
 }

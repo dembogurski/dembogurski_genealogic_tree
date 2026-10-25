@@ -1,0 +1,21 @@
+.new-parent-panel {
+  padding: 12px 14px;
+  border: 1px dashed #c8c1af;
+  border-radius: 8px;
+  background: #f7f3e8;
+}
+
+.new-parent-panel summary {
+  color: #3e5b43;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.new-parent-panel[open] summary {
+  margin-bottom: 8px;
+}
+
+.new-parent-panel .form-hint {
+  margin: 0 0 12px;
+}
