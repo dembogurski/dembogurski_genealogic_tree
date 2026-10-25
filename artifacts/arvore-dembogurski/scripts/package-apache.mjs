@@ -46,6 +46,7 @@ await writeFile(
     <link rel="stylesheet" href="./project-nav.css">
   </head>
   <body>
+    <a class="admin-entry" href="./admin-login.php">Entrar como administrador</a>
     <a class="portada-return" href="../" aria-label="Voltar à portada da família">
       <span aria-hidden="true">←</span>
       <span>Portada</span>

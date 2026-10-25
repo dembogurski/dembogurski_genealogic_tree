@@ -203,7 +203,9 @@ function getTree(PDO $pdo, string $user): never
                 cidade, observacoes, padre_id AS pai_id, madre_id AS mae_id,
                 conyuge_actual_id AS conjuge_atual_id, latitude, longitude, foto_url
          FROM pessoas
-         ORDER BY CASE WHEN ramo = 0 THEN 0 ELSE 1 END, ramo, sobrenome, nome, id'
+         ORDER BY CASE WHEN ramo = 0 THEN 0 ELSE 1 END, ramo,
+                  CASE WHEN data_nascimento IS NULL THEN 1 ELSE 0 END,
+                  data_nascimento, id'
     );
     $people = array_map(static function (array $row): array {
         foreach (['data_nascimento', 'data_falecimento', 'cidade', 'observacoes', 'pai_id', 'mae_id', 'conjuge_atual_id', 'foto_url'] as $key) {

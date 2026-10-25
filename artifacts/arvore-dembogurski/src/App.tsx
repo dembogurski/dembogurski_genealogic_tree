@@ -6,6 +6,7 @@ import {
   Maximize, Minimize, ZoomIn, ZoomOut, Scan, Settings,
 } from 'lucide-react';
 import FamilyMap from './FamilyMap';
+import { compareFamilyOrder } from './family-order';
 import { type Place, searchPlaces } from './location-search';
 import { fitTreeZoom } from './tree-zoom';
 import UserAdministration from './UserAdministration';
@@ -381,7 +382,8 @@ function App() {
   };
   const visibleDescendants = (person: Person) => people
     .filter((candidate) => candidate.pai_id === person.id || candidate.mae_id === person.id)
-    .filter((candidate) => matchingPersonOrDescendant(candidate));
+    .filter((candidate) => matchingPersonOrDescendant(candidate))
+    .sort(compareFamilyOrder);
   const treeWidths = useMemo(() => {
     const widths = new Map<number, number>();
     const measure = (person: Person, visiting = new Set<number>()): number => {
@@ -391,7 +393,8 @@ function App() {
       const nextVisiting = new Set(visiting).add(person.id);
       const children = people
         .filter((candidate) => candidate.pai_id === person.id || candidate.mae_id === person.id)
-        .filter((candidate) => matchingPersonOrDescendant(candidate));
+        .filter((candidate) => matchingPersonOrDescendant(candidate))
+        .sort(compareFamilyOrder);
       const childrenWidth = children.reduce((total, child) => total + measure(child, nextVisiting), 0)
         + Math.max(0, children.length - 1) * siblingGap;
       const width = Math.max(personCardWidth, childrenWidth);
@@ -730,7 +733,7 @@ function App() {
         byLevel.set(level, row);
       }
       for (const [level, row] of byLevel) {
-        row.sort((a, b) => fullName(a).localeCompare(fullName(b), 'pt-BR') || a.id - b.id);
+        row.sort(compareFamilyOrder);
         const rowWidth = row.length * slotWidth - (slotWidth - cardWidth);
         const firstX = cursorX + (columnWidth - rowWidth) / 2;
         row.forEach((person, index) => positions.set(person.id, {
