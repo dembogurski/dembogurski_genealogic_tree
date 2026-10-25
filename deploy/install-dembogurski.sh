@@ -99,10 +99,14 @@ chmod 600 "${DATABASE_CONFIG}"
 "${MARIADB_ADMIN[@]}" "${DB_NAME}" < "${TREE_DIR}/schema.sql"
 unset MYSQL_PWD mariadb_admin_password 2>/dev/null || true
 
-if [[ ! -f "${HTPASSWD_FILE}" ]]; then
+if [[ ! -s "${HTPASSWD_FILE}" ]]; then
   echo
   echo "Crie a senha do primeiro administrador da árvore."
   htpasswd -B -c "${HTPASSWD_FILE}" admin
+elif ! grep -q '^admin:' "${HTPASSWD_FILE}"; then
+  echo
+  echo "Crie a senha do administrador da árvore."
+  htpasswd -B "${HTPASSWD_FILE}" admin
 fi
 
 chown root:www-data "${HTPASSWD_FILE}"

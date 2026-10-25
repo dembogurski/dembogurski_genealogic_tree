@@ -154,7 +154,7 @@ renovação automática.
 
 ```text
 https://dembogurski.com/         Portada pública
-https://dembogurski.com/arvore/  Árvore com autenticação
+https://dembogurski.com/arvore/  Árvore pública; edição autenticada
 ```
 
 A senha do MySQL, os usuários do Apache e `users-roles.json` nunca devem ser

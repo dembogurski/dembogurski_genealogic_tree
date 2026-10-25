@@ -4,6 +4,9 @@ Portada local: http://localhost/dembogurski/
 
 Árbol local: http://localhost/dembogurski/arvore/
 
+La consulta de la portada y del árbol es pública. Para editar, pulsa **Entrar
+como administrador** en el árbol e introduce una cuenta autorizada.
+
 ## Administrar desde la página
 
 Entra como administrador y pulsa la **engranaje** junto a **atualiza a cada 15 s**. Solo los administradores pueden verla y acceder al panel.

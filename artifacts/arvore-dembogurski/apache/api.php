@@ -26,17 +26,27 @@ function inputJson(): array
     return $decoded;
 }
 
-function authenticatedUser(): string
+function currentUser(): string
 {
     $user = trim((string)($_SERVER['REMOTE_USER'] ?? $_SERVER['PHP_AUTH_USER'] ?? ''));
-    if ($user === '') {
-        respond(['error' => 'Autentique-se para acessar a árvore da família.'], 401);
+    if ($user !== '') {
+        return $user;
     }
-    return $user;
+
+    if (!isset($_COOKIE['dembogurski_tree'])) {
+        return '';
+    }
+
+    startTreeSession();
+    return trim((string)($_SESSION['auth_user'] ?? ''));
 }
 
-function startUserSession(string $user): void
+function startTreeSession(): void
 {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        return;
+    }
+
     ini_set('session.use_strict_mode', '1');
     ini_set('session.use_only_cookies', '1');
     session_name('dembogurski_tree');
@@ -49,7 +59,11 @@ function startUserSession(string $user): void
         'samesite' => 'Strict',
     ]);
     session_start();
+}
 
+function startUserSession(string $user): void
+{
+    startTreeSession();
     if (!isset($_SESSION['auth_user']) || !hash_equals((string)$_SESSION['auth_user'], $user)) {
         session_regenerate_id(true);
         $_SESSION = ['auth_user' => $user];
@@ -213,10 +227,10 @@ function getTree(PDO $pdo, string $user): never
     }, $query->fetchAll());
     respond([
         'people' => $people,
-        'can_edit' => isOrganizer($user),
-        'can_manage_users' => isOrganizer($user) && treeUserStore() !== null,
+        'can_edit' => $user !== '' && isOrganizer($user),
+        'can_manage_users' => $user !== '' && isOrganizer($user) && treeUserStore() !== null,
         'current_user' => $user,
-        'csrf_token' => $_SESSION['csrf_token'],
+        'csrf_token' => $user !== '' ? ($_SESSION['csrf_token'] ?? '') : '',
     ]);
 }
 
@@ -590,9 +604,14 @@ function uploadPhoto(PDO $pdo): never
 try {
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
     $action = $_GET['action'] ?? '';
-    $user = authenticatedUser();
-    startUserSession($user);
+    $user = currentUser();
+    if ($user !== '') {
+        startUserSession($user);
+    }
     if ($method === 'POST') {
+        if ($user === '') {
+            respond(['error' => 'Autentique-se para alterar a árvore da família.'], 401);
+        }
         requireOrganizer($user);
         requireValidCsrfToken();
     }

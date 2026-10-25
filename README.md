@@ -2,7 +2,7 @@
 
 Aplicación web para consultar y mantener el árbol genealógico familiar. La vista de desarrollo usa datos guardados en el navegador; para compartir los cambios entre usuarios, instala la versión PHP/MySQL en Apache.
 
-El proyecto incluye una portada pública en la raíz del sitio y el árbol protegido en `/arvore/`. En WAMP, las direcciones locales son `http://localhost/dembogurski/` y `http://localhost/dembogurski/arvore/`.
+El proyecto incluye una portada pública en la raíz del sitio y el árbol en `/arvore/`. Cualquier visitante puede consultar el árbol; la edición requiere entrar con una cuenta autorizada desde **Entrar como administrador**. En WAMP, las direcciones locales son `http://localhost/dembogurski/` y `http://localhost/dembogurski/arvore/`.
 
 En **Definir localização**, escribe una ciudad o lugar, pulsa **Buscar** y selecciona un resultado para completar la latitud y la longitud. Confirma con **Salvar localização**. Las coordenadas también se pueden editar manualmente.
 
@@ -81,7 +81,7 @@ El servidor necesita PHP 8.x con las extensiones `PDO MySQL`, `Fileinfo`, `GD` y
 
 Si `TREE_ORGANIZERS` falta o está vacío, las escrituras quedan bloqueadas. No guardes contraseñas ni valores reales en archivos versionados o en Git. Configura `upload_max_filesize = 8M` y `post_max_size = 10M` para aceptar fotos de hasta 8 MB.
 
-Si el sitio estará disponible en Internet, usa HTTPS y configura autenticación de Apache antes de compartirlo. La [guía detallada de Apache/PHP/MySQL](artifacts/arvore-dembogurski/apache/README.md) incluye un ejemplo de autenticación y permisos.
+Si el sitio estará disponible en Internet, usa HTTPS. La lectura del árbol es pública y la autenticación de Apache se solicita solo para entrar como editor o enviar cambios. La [guía detallada de Apache/PHP/MySQL](artifacts/arvore-dembogurski/apache/README.md) incluye la configuración y los permisos.
 
 ## Persistencia
 

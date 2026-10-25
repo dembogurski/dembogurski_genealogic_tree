@@ -68,6 +68,6 @@ sudo systemctl reload apache2
 ```text
 /www/dembogurski                    Código Git
 /www/dembogurski/portada            Portada pública
-/www/dembogurski/artifacts/.../apache  Árvore protegida em /arvore/
+/www/dembogurski/artifacts/.../apache  Árvore pública em /arvore/
 /etc/apache2/dembogurski            Usuários e configuração privada
 ```
