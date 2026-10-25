@@ -16,6 +16,7 @@ SITE_CONFIG="/etc/apache2/sites-available/dembogurski.com.conf"
 DB_NAME="familia_dembogurski"
 DB_USER="dembogurski_app"
 DB_HOST="127.0.0.1"
+MARIADB_ADMIN=(mariadb --no-defaults --protocol=socket --user=root)
 
 for required in \
   "${LANDING_DIR}/index.html" \
@@ -40,7 +41,7 @@ install -d -o root -g www-data -m 2770 "${PRIVATE_DIR}"
 
 if [[ ! -f "${DATABASE_CONFIG}" ]]; then
   db_password="$(openssl rand -hex 32)"
-  mariadb <<SQL
+  "${MARIADB_ADMIN[@]}" <<SQL
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '${DB_USER}'@'${DB_HOST}' IDENTIFIED BY '${db_password}';
@@ -67,7 +68,7 @@ fi
 chown root:root "${DATABASE_CONFIG}"
 chmod 600 "${DATABASE_CONFIG}"
 
-mariadb "${DB_NAME}" < "${TREE_DIR}/schema.sql"
+"${MARIADB_ADMIN[@]}" "${DB_NAME}" < "${TREE_DIR}/schema.sql"
 
 if [[ ! -f "${HTPASSWD_FILE}" ]]; then
   echo
