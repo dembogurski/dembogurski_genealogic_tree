@@ -4,10 +4,23 @@ Destino definido:
 
 ```text
 Domínio: https://dembogurski.com
-Pasta pública: /var/www/dembogurski
-Portada: /var/www/dembogurski/index.html
-Árvore: /var/www/dembogurski/arvore/
+Código: /www/dembogurski
+Portada: /www/dembogurski/portada/
+Árvore: /www/dembogurski/artifacts/arvore-dembogurski/apache/
 ```
+
+## Instalação rápida
+
+Com o repositório clonado em `/www/dembogurski` e executado como `root`:
+
+```bash
+cd /www/dembogurski
+bash deploy/install-dembogurski.sh
+```
+
+O instalador cria somente o virtual host de `dembogurski.com`, preserva os
+outros domínios, gera uma senha aleatória para o banco e pede a senha do
+administrador da árvore. Não execute `a2dissite 000-default`.
 
 ## 1. Gerar o pacote
 
@@ -48,7 +61,6 @@ sudo a2enmod auth_basic authn_file authz_user headers expires rewrite ssl
 Criar as pastas:
 
 ```bash
-sudo mkdir -p /var/www/dembogurski
 sudo mkdir -p /etc/apache2/dembogurski
 ```
 

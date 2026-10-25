@@ -1,7 +1,8 @@
 # Publicar pelo Git e instalar no Hetzner
 
-O repositório é o único projeto. No servidor, ele será clonado numa pasta de
-código e a versão pública será copiada para `/var/www/dembogurski`.
+O repositório é o único projeto. No servidor, ele fica em
+`/www/dembogurski`; a portada será servida diretamente desse diretório e a
+árvore por um alias privado do Apache.
 
 > **Atenção:** `https://github.com/dembogurski/dembogurski_genealogic_tree`
 > está público neste momento. Se o código ou os dados de exemplo contêm
@@ -37,33 +38,17 @@ Use uma pasta de código separada da pasta pública:
 ```bash
 sudo apt update
 sudo apt install -y git rsync apache2 mariadb-server php php-mysql php-mbstring php-gd php-fileinfo certbot python3-certbot-apache apache2-utils
-sudo git clone https://github.com/dembogurski/dembogurski_genealogic_tree.git /srv/dembogurski
+sudo git clone https://github.com/dembogurski/dembogurski_genealogic_tree.git /www/dembogurski
 ```
 
 Se o repositório for privado, configure uma deploy key de leitura no GitHub.
 
-Copiar apenas os arquivos públicos para o Apache:
+Executar o instalador:
 
 ```bash
-sudo mkdir -p /var/www/dembogurski
-sudo mkdir -p /var/www/dembogurski/arvore/uploads
-
-sudo rsync -a --delete \
-  --exclude '/arvore/' \
-  --exclude '/README.md' \
-  /srv/dembogurski/portada/ /var/www/dembogurski/
-
-sudo rsync -a --delete \
-  --exclude '/uploads/' \
-  /srv/dembogurski/artifacts/arvore-dembogurski/apache/ \
-  /var/www/dembogurski/arvore/
-
-sudo cp /srv/dembogurski/artifacts/arvore-dembogurski/apache/uploads/.htaccess /var/www/dembogurski/arvore/uploads/.htaccess
-sudo chown -R www-data:www-data /var/www/dembogurski/arvore/uploads
+cd /www/dembogurski
+sudo bash deploy/install-dembogurski.sh
 ```
-
-As exclusões preservam a pasta `arvore` ao atualizar a portada e preservam as
-fotos enviadas pela aplicação ao atualizar o código da árvore.
 
 Continue com a configuração de MariaDB, usuários e Apache em
 [`deploy/README.md`](deploy/README.md).
@@ -73,18 +58,16 @@ Continue com a configuração de MariaDB, usuários e Apache em
 Depois de um novo push:
 
 ```bash
-cd /srv/dembogurski
+cd /www/dembogurski
 sudo git pull --ff-only
-sudo rsync -a --delete --exclude '/arvore/' --exclude '/README.md' /srv/dembogurski/portada/ /var/www/dembogurski/
-sudo rsync -a --delete --exclude '/uploads/' /srv/dembogurski/artifacts/arvore-dembogurski/apache/ /var/www/dembogurski/arvore/
 sudo systemctl reload apache2
 ```
 
 ## Estrutura final
 
 ```text
-/srv/dembogurski                    Código Git, fora da área pública
-/var/www/dembogurski                Portada pública
-/var/www/dembogurski/arvore         Árvore protegida
+/www/dembogurski                    Código Git
+/www/dembogurski/portada            Portada pública
+/www/dembogurski/artifacts/.../apache  Árvore protegida em /arvore/
 /etc/apache2/dembogurski            Usuários e configuração privada
 ```
