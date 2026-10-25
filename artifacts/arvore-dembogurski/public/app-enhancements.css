@@ -60,6 +60,10 @@
   gap: 6px;
 }
 
+.child-place-search {
+  margin-bottom: 13px;
+}
+
 .coordinate-map-frame {
   position: relative;
   margin-bottom: 13px;

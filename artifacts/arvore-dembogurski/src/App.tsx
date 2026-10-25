@@ -1313,19 +1313,55 @@ function ChildLocationPicker() {
   const [mapOpen, setMapOpen] = useState(false);
   const [latitudeValue, setLatitudeValue] = useState('');
   const [longitudeValue, setLongitudeValue] = useState('');
+  const [placeQuery, setPlaceQuery] = useState('');
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchMessage, setSearchMessage] = useState('');
+  const [selectedPlace, setSelectedPlace] = useState('');
+  const requestRef = useRef<AbortController | null>(null);
   const latitude = Number(latitudeValue);
   const longitude = Number(longitudeValue);
   const hasPoint = Number.isFinite(latitude) && Number.isFinite(longitude)
     && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
+  useEffect(() => () => requestRef.current?.abort(), []);
+
+  const findPlaces = async () => {
+    if (searching || placeQuery.trim().length < 3) return;
+    requestRef.current?.abort();
+    const request = new AbortController();
+    requestRef.current = request;
+    const timeout = window.setTimeout(() => request.abort(), 15000);
+    setSearching(true);
+    setPlaces([]);
+    setSearchMessage('');
+    try {
+      const results = await searchPlaces(placeQuery, request.signal);
+      if (requestRef.current !== request) return;
+      setPlaces(results);
+      if (!results.length) setSearchMessage('Nenhum lugar encontrado. Tente incluir o estado ou o país.');
+    } catch (searchError) {
+      if (requestRef.current !== request) return;
+      setSearchMessage(request.signal.aborted
+        ? 'A busca demorou demais. Tente novamente.'
+        : searchError instanceof Error ? searchError.message : 'Não foi possível buscar. Verifique sua conexão.');
+    } finally {
+      window.clearTimeout(timeout);
+      if (requestRef.current === request) setSearching(false);
+    }
+  };
 
   const selectPoint = (nextLatitude: number, nextLongitude: number) => {
     setLatitudeValue(nextLatitude.toFixed(6));
     setLongitudeValue(nextLongitude.toFixed(6));
+    setSelectedPlace('');
   };
 
   const clearPoint = () => {
     setLatitudeValue('');
     setLongitudeValue('');
+    setSelectedPlace('');
+    setPlaces([]);
+    setSearchMessage('');
   };
 
   return (
@@ -1333,7 +1369,7 @@ function ChildLocationPicker() {
       <div className="child-location-heading">
         <div>
           <label>Localização</label>
-          <small>Clique no mapa para marcar o lugar ou informe as coordenadas abaixo.</small>
+          <small>Busque uma cidade ou lugar, clique no mapa ou informe as coordenadas.</small>
         </div>
         <div className="child-location-actions">
           {hasPoint && <button type="button" className="button small" onClick={clearPoint}>Limpar</button>}
@@ -1342,6 +1378,56 @@ function ChildLocationPicker() {
             {mapOpen ? 'Fechar mapa' : 'Selecionar no mapa'}
           </button>
         </div>
+      </div>
+      <div className="field place-search child-place-search">
+        <label htmlFor="new-child-place-query">Buscar cidade ou lugar</label>
+        <div className="place-search-controls">
+          <input
+            id="new-child-place-query"
+            value={placeQuery}
+            maxLength={200}
+            placeholder="Ex.: Curitiba, Brasil ou Encarnación, Paraguay"
+            onChange={(event) => {
+              requestRef.current?.abort();
+              requestRef.current = null;
+              setSearching(false);
+              setPlaceQuery(event.target.value);
+              setPlaces([]);
+              setSearchMessage('');
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void findPlaces();
+              }
+            }}
+          />
+          <button type="button" className="button" disabled={searching || placeQuery.trim().length < 3} onClick={() => void findPlaces()}>
+            <Search size={15} />
+            {searching ? 'Buscando…' : 'Buscar'}
+          </button>
+        </div>
+        <div role="status" aria-live="polite">{searching ? 'Buscando lugares…' : searchMessage}</div>
+        {places.length > 0 && (
+          <ul className="place-results" aria-label="Lugares encontrados">
+            {places.map((place, index) => (
+              <li key={`${place.latitude},${place.longitude},${index}`}>
+                <button type="button" onClick={() => {
+                  selectPoint(place.latitude, place.longitude);
+                  setSelectedPlace(place.label);
+                  setPlaces([]);
+                  setMapOpen(true);
+                  setSearchMessage('Coordenadas preenchidas. Elas serão salvas com o novo filho ou filha.');
+                }}>
+                  <MapPin size={15} />
+                  <span>{place.label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {selectedPlace && <p className="place-selected">Local selecionado: {selectedPlace}</p>}
+        <small className="place-attribution">Busca: <a href="https://github.com/komoot/photon" target="_blank" rel="noreferrer">Photon</a> · © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a></small>
       </div>
       {mapOpen && (
         <div className="coordinate-map-frame">
@@ -1362,11 +1448,11 @@ function ChildLocationPicker() {
       <div className="form-grid">
         <div className="field">
           <label htmlFor="new-child-latitude">Latitude</label>
-          <input id="new-child-latitude" name="latitude" type="number" step="any" value={latitudeValue} onChange={(event) => setLatitudeValue(event.target.value)} placeholder="-25.4284" />
+          <input id="new-child-latitude" name="latitude" type="number" step="any" value={latitudeValue} onChange={(event) => { setLatitudeValue(event.target.value); setSelectedPlace(''); }} placeholder="-25.4284" />
         </div>
         <div className="field">
           <label htmlFor="new-child-longitude">Longitude</label>
-          <input id="new-child-longitude" name="longitude" type="number" step="any" value={longitudeValue} onChange={(event) => setLongitudeValue(event.target.value)} placeholder="-49.2733" />
+          <input id="new-child-longitude" name="longitude" type="number" step="any" value={longitudeValue} onChange={(event) => { setLongitudeValue(event.target.value); setSelectedPlace(''); }} placeholder="-49.2733" />
         </div>
       </div>
     </div>
