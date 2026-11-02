@@ -31,7 +31,7 @@ export type Person = {
 };
 
 type TreeResponse = { people: Person[]; can_edit?: boolean; can_manage_users?: boolean; current_user?: string; csrf_token?: string };
-type FormKind = 'child' | 'spouse' | 'photo' | 'location' | 'edit' | 'delete';
+type FormKind = 'child' | 'spouse' | 'change-spouse' | 'photo' | 'location' | 'edit' | 'delete';
 type BranchInfo = { id: number; title: string; phrase: string; icon: typeof Leaf };
 
 const branchInfo: BranchInfo[] = [
@@ -487,6 +487,61 @@ function App() {
     setPeople((current) => current.map((person) => person.id === personId ? { ...person, ...coordinates } : person));
   };
 
+  const changeSpouse = async (personId: number, spouseId: number) => {
+    if (!canEdit) throw new Error('Somente organizadores autorizados podem fazer alterações.');
+    if (isDemo) {
+      const previousSpouseId = localTree().people.find((person) => person.id === personId)?.conjuge_atual_id ?? null;
+      const next = localTree().people.map((person) => {
+        if (person.id === personId) return { ...person, conjuge_atual_id: spouseId };
+        if (person.id === spouseId) return { ...person, conjuge_atual_id: personId };
+        if (person.id === previousSpouseId) return { ...person, conjuge_atual_id: null };
+        return person;
+      });
+      persistLocal(next);
+      setPeople(next);
+      return previousSpouseId;
+    }
+    const response = await fetch('./api.php?action=change_spouse', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...csrfHeaders(csrfToken) },
+      body: JSON.stringify({ person_id: personId, spouse_id: spouseId }),
+    });
+    if (!response.ok) throw new Error(await responseError(response));
+    const result = await response.json() as { previous_spouse_id?: number | null };
+    const previousSpouseId = result.previous_spouse_id ?? null;
+    setPeople((current) => current.map((person) => {
+      if (person.id === personId) return { ...person, conjuge_atual_id: spouseId };
+      if (person.id === spouseId) return { ...person, conjuge_atual_id: personId };
+      if (person.id === previousSpouseId) return { ...person, conjuge_atual_id: null };
+      return person;
+    }));
+    return previousSpouseId;
+  };
+
+  const submitExistingSpouse = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!activePerson) return;
+    const spouseId = Number(new FormData(event.currentTarget).get('spouse_id'));
+    if (!Number.isInteger(spouseId) || spouseId <= 0) {
+      setFormError('Selecione o novo cônjuge.');
+      return;
+    }
+    const nextSpouse = personMap.get(spouseId);
+    setFormError('');
+    setBusy(true);
+    try {
+      await changeSpouse(activePerson.id, spouseId);
+      setActivePerson((current) => current ? { ...current, conjuge_atual_id: spouseId } : current);
+      setSuccessNote(`Cônjuge de ${activePerson.nome} alterado para ${nextSpouse ? fullName(nextSpouse) : 'a pessoa selecionada'}.`);
+      setFormKind(null);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'Não foi possível alterar o cônjuge.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const savePhoto = async (personId: number, file: File) => {
     if (!canEdit) throw new Error('Somente organizadores autorizados podem fazer alterações.');
     if (isDemo) {
@@ -620,7 +675,6 @@ function App() {
       let firstParent = String(form.get('pai_id') || '');
       let secondParent = String(form.get('mae_id') || '');
       const spouse = formKind === 'spouse';
-      if (spouse && activePerson.conjuge_atual_id) throw new Error('Esta pessoa já possui um cônjuge vinculado.');
       let newParentName = '';
       if (!spouse) {
         newParentName = String(form.get('new_parent_nome') || '').trim();
@@ -663,7 +717,7 @@ function App() {
       if (!spouse && Number(firstParent) !== activePerson.id && Number(secondParent) !== activePerson.id) {
         throw new Error(`Selecione ${fullName(activePerson)} como pai ou mãe para adicionar seu filho ou filha.`);
       }
-      const newPerson: Omit<Person, 'id'> & { relationship_type?: 'child' | 'spouse' } = {
+      const newPerson: Omit<Person, 'id'> & { relationship_type?: 'child' | 'spouse'; replace_existing_spouse?: boolean } = {
         nome, sobrenome, sexo: sex || null,
         ramo: activePerson.ramo || Number(form.get('ramo') || 1),
         data_nascimento: String(form.get('data_nascimento') || '') || null,
@@ -677,18 +731,28 @@ function App() {
         latitude: form.get('latitude') ? Number(form.get('latitude')) : null,
         longitude: form.get('longitude') ? Number(form.get('longitude')) : null,
         relationship_type: spouse ? 'spouse' : 'child',
+        replace_existing_spouse: spouse && Boolean(activePerson.conjuge_atual_id),
       };
       if (spouse) {
+        const previousSpouseId = activePerson.conjuge_atual_id;
         const newSpouse = await savePerson(newPerson);
-        const updated = (isDemo ? localTree().people : people).map((person) => person.id === activePerson.id ? { ...person, conjuge_atual_id: newSpouse.id } : person);
+        const updateSpouseLinks = (rows: Person[]) => rows.map((person) => {
+          if (person.id === activePerson.id) return { ...person, conjuge_atual_id: newSpouse.id };
+          if (person.id === previousSpouseId) return { ...person, conjuge_atual_id: null };
+          return person;
+        });
+        const updated = updateSpouseLinks(isDemo ? localTree().people : people);
         if (isDemo) persistLocal(updated);
-        setPeople((current) => current.map((person) => person.id === activePerson.id ? { ...person, conjuge_atual_id: newSpouse.id } : person));
+        setPeople(updateSpouseLinks);
+        setActivePerson((current) => current ? { ...current, conjuge_atual_id: newSpouse.id } : current);
       } else {
         await savePerson(newPerson);
       }
-      setSuccessNote(newParentName
-        ? `${nome} e ${newParentName} foram adicionados à árvore.`
-        : `${nome} foi adicionado à árvore.`);
+      setSuccessNote(spouse && activePerson.conjuge_atual_id
+        ? `Cônjuge de ${activePerson.nome} alterado para ${nome}. O vínculo anterior foi removido sem excluir a pessoa.`
+        : newParentName
+          ? `${nome} e ${newParentName} foram adicionados à árvore.`
+          : `${nome} foi adicionado à árvore.`);
       closeModal();
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Não foi possível salvar os dados.');
@@ -920,6 +984,17 @@ function App() {
 
   const displayBranches = filteredBranches.filter((branch) => !query || branch.roots.length > 0 || branch.headMatches);
   const totalLiving = people.filter((person) => person.id > 2).length;
+  const spouseCandidates = activePerson
+    ? people
+      .filter((person) => person.id !== activePerson.id
+        && person.id !== activePerson.conjuge_atual_id
+        && (person.conjuge_atual_id === null || person.conjuge_atual_id === activePerson.id)
+        && person.id !== activePerson.pai_id
+        && person.id !== activePerson.mae_id
+        && person.pai_id !== activePerson.id
+        && person.mae_id !== activePerson.id)
+      .sort(compareFamilyOrder)
+    : [];
 
   return (
     <main className={`app-shell${printPreview ? ' print-preview' : ''}`} ref={appShellRef}>
@@ -1113,8 +1188,8 @@ function App() {
             <button className="action-row" onClick={() => { setFormKind('child'); setFormError(''); }}>
               <span className="action-icon"><UserPlus size={16} /></span><span className="action-copy"><strong>Agregar filho ou filha</strong><small>Adicionar uma nova pessoa neste ramo</small></span><ChevronRight size={16} />
             </button>
-            <button className="action-row" disabled={!!activePerson.conjuge_atual_id} onClick={() => { setFormKind('spouse'); setFormError(''); }}>
-              <span className="action-icon"><Link2 size={16} /></span><span className="action-copy"><strong>Adicionar cônjuge</strong><small>{activePerson.conjuge_atual_id ? 'Esta pessoa já possui um cônjuge vinculado' : 'Cadastrar marido ou esposa e vincular à pessoa'}</small></span><ChevronRight size={16} />
+            <button className="action-row" onClick={() => { setFormKind(activePerson.conjuge_atual_id ? 'change-spouse' : 'spouse'); setFormError(''); }}>
+              <span className="action-icon"><Link2 size={16} /></span><span className="action-copy"><strong>{activePerson.conjuge_atual_id ? 'Cambiar cônjuge' : 'Adicionar cônjuge'}</strong><small>{activePerson.conjuge_atual_id ? 'Substituir o vínculo sem excluir a pessoa anterior' : 'Cadastrar marido ou esposa e vincular à pessoa'}</small></span><ChevronRight size={16} />
             </button>
             <button className="action-row" onClick={() => { setFormKind('location'); setFormError(''); }}>
               <span className="action-icon"><MapPin size={16} /></span><span className="action-copy"><strong>Definir localização</strong><small>Compartilhada com quem vê o mapa da família</small></span><ChevronRight size={16} />
@@ -1160,9 +1235,9 @@ function App() {
         </Modal>
       )}
 
-      {activePerson && formKind && formKind !== 'location' && formKind !== 'delete' && (
+      {activePerson && formKind && formKind !== 'location' && formKind !== 'delete' && formKind !== 'change-spouse' && (
         <Modal
-          title={formKind === 'edit' ? 'Editar dados da pessoa' : formKind === 'child' ? 'Adicionar filho ou filha' : formKind === 'spouse' ? 'Adicionar cônjuge' : 'Foto de família'}
+          title={formKind === 'edit' ? 'Editar dados da pessoa' : formKind === 'child' ? 'Adicionar filho ou filha' : formKind === 'spouse' ? (activePerson.conjuge_atual_id ? 'Substituir cônjuge' : 'Adicionar cônjuge') : 'Foto de família'}
           kicker={`${fullName(activePerson)} · ${formKind === 'photo' ? 'retrato' : formKind === 'edit' ? 'atualizar cadastro' : 'novo registro'}`}
           onClose={() => setFormKind(null)}
         >
@@ -1204,7 +1279,11 @@ function App() {
             </form>
           ) : (
             <form onSubmit={submitPersonForm}>
-              <p className="form-hint">{formKind === 'spouse' ? 'O vínculo conjugal não substitui os pais biológicos.' : 'É possível indicar um ou dois pais biológicos, independentemente de vínculo conjugal.'}</p>
+              <p className="form-hint">{formKind === 'spouse'
+                ? (activePerson.conjuge_atual_id
+                  ? `O vínculo atual será removido, mas ${personMap.get(activePerson.conjuge_atual_id) ? fullName(personMap.get(activePerson.conjuge_atual_id)!) : 'a pessoa anterior'} não será excluída.`
+                  : 'O vínculo conjugal não substitui os pais biológicos.')
+                : 'É possível indicar um ou dois pais biológicos, independentemente de vínculo conjugal.'}</p>
               <div className="form-grid">
                 <div className="field"><label htmlFor="nome">Nome *</label><input id="nome" name="nome" autoFocus required maxLength={80} /></div>
                 <div className="field"><label htmlFor="sobrenome">Sobrenome *</label><input id="sobrenome" name="sobrenome" defaultValue={formKind === 'child' ? 'Dembogurski' : ''} required maxLength={100} /></div>
@@ -1252,9 +1331,34 @@ function App() {
                 <div className="field full"><label htmlFor="observacoes">Observações e memórias</label><textarea id="observacoes" name="observacoes" placeholder="Uma lembrança, história ou detalhe que vale guardar…" maxLength={1000} /></div>
               </div>
               {formError && <div className="form-error" role="alert">{formError}</div>}
-              <div className="modal-actions"><button type="button" className="button" onClick={() => setFormKind(null)}>Voltar</button><button className="button primary" disabled={busy}><Plus size={15} />{busy ? 'Salvando…' : 'Adicionar à árvore'}</button></div>
+              <div className="modal-actions"><button type="button" className="button" onClick={() => setFormKind(null)}>Voltar</button><button className="button primary" disabled={busy}><Plus size={15} />{busy ? 'Salvando…' : formKind === 'spouse' && activePerson.conjuge_atual_id ? 'Substituir cônjuge' : 'Adicionar à árvore'}</button></div>
             </form>
           )}
+        </Modal>
+      )}
+
+      {activePerson && formKind === 'change-spouse' && (
+        <Modal title="Cambiar cónyuge" kicker={`${fullName(activePerson)} · vínculo conjugal`} onClose={() => setFormKind(null)}>
+          <form onSubmit={submitExistingSpouse}>
+            <p className="form-hint">
+              Vínculo atual: <strong>{activePerson.conjuge_atual_id && personMap.get(activePerson.conjuge_atual_id) ? fullName(personMap.get(activePerson.conjuge_atual_id)!) : 'não informado'}</strong>.
+              Ao trocar, a pessoa anterior continuará na árvore sem o vínculo conjugal.
+            </p>
+            <div className="field">
+              <label htmlFor="replacement-spouse">Novo cônjuge</label>
+              <select id="replacement-spouse" name="spouse_id" required defaultValue="" disabled={busy || spouseCandidates.length === 0}>
+                <option value="" disabled>Selecione uma pessoa sem vínculo atual</option>
+                {spouseCandidates.map((person) => <option value={person.id} key={person.id}>{fullName(person)}</option>)}
+              </select>
+            </div>
+            {!spouseCandidates.length && <p className="form-hint">Não há outra pessoa disponível para vincular. Cadastre o novo cônjuge.</p>}
+            {formError && <div className="form-error" role="alert">{formError}</div>}
+            <div className="modal-actions">
+              <button type="button" className="button" disabled={busy} onClick={() => setFormKind(null)}>Voltar</button>
+              <button type="button" className="button" disabled={busy} onClick={() => { setFormError(''); setFormKind('spouse'); }}>Cadastrar nova pessoa</button>
+              <button className="button primary" disabled={busy || spouseCandidates.length === 0}><Check size={15} />{busy ? 'Salvando…' : 'Cambiar vínculo'}</button>
+            </div>
+          </form>
         </Modal>
       )}
 

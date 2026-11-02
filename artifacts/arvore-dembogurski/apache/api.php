@@ -254,6 +254,10 @@ function addPerson(PDO $pdo): never
     if (!in_array($relationship, ['child', 'spouse'], true)) {
         respond(['error' => 'Tipo de vínculo não reconhecido.'], 422);
     }
+    $replaceExistingSpouse = $body['replace_existing_spouse'] ?? false;
+    if (!is_bool($replaceExistingSpouse)) {
+        respond(['error' => 'A confirmação de troca de cônjuge é inválida.'], 422);
+    }
 
     $father = optionalId($body['pai_id'] ?? null, 'pai_id');
     $mother = optionalId($body['mae_id'] ?? null, 'mae_id');
@@ -283,7 +287,18 @@ function addPerson(PDO $pdo): never
             $existing->execute([$spouseOf]);
             $linked = $existing->fetch();
             if ($linked['conjuge_atual_id'] !== null) {
-                respond(['error' => 'Essa pessoa já possui um cônjuge atual vinculado.'], 409);
+                if (!$replaceExistingSpouse) {
+                    respond(['error' => 'Essa pessoa já possui um cônjuge atual vinculado.'], 409);
+                }
+                $oldSpouseId = (int)$linked['conjuge_atual_id'];
+                $oldSpouse = $pdo->prepare('SELECT conyuge_actual_id AS conjuge_atual_id FROM pessoas WHERE id = ? FOR UPDATE');
+                $oldSpouse->execute([$oldSpouseId]);
+                $oldLinked = $oldSpouse->fetch();
+                if ($oldLinked && $oldLinked['conjuge_atual_id'] !== null) {
+                    $unlink = $pdo->prepare('UPDATE pessoas SET conyuge_actual_id = NULL WHERE id = ? AND conyuge_actual_id = ?');
+                    $unlink->execute([$spouseOf, $oldSpouseId]);
+                    $unlink->execute([$oldSpouseId, $spouseOf]);
+                }
             }
             $branch = (int)$linked['ramo'];
             $father = null;
@@ -457,6 +472,81 @@ function updatePerson(PDO $pdo): never
     $person['latitude'] = $person['latitude'] === null ? null : (float)$person['latitude'];
     $person['longitude'] = $person['longitude'] === null ? null : (float)$person['longitude'];
     respond($person);
+}
+
+function changeSpouse(PDO $pdo): never
+{
+    $body = inputJson();
+    $personId = filter_var($body['person_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    $spouseId = filter_var($body['spouse_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    if ($personId === false || $spouseId === false || (int)$personId === (int)$spouseId) {
+        respond(['error' => 'Selecione duas pessoas diferentes para o vínculo conjugal.'], 422);
+    }
+    $personId = (int)$personId;
+    $spouseId = (int)$spouseId;
+
+    $pdo->beginTransaction();
+    try {
+        $lock = $pdo->prepare(
+            'SELECT id, padre_id, madre_id, conyuge_actual_id
+             FROM pessoas
+             WHERE id IN (?, ?)
+             FOR UPDATE'
+        );
+        $lock->execute([$personId, $spouseId]);
+        $rows = [];
+        foreach ($lock->fetchAll() as $row) {
+            $rows[(int)$row['id']] = $row;
+        }
+        if (!isset($rows[$personId], $rows[$spouseId])) {
+            $pdo->rollBack();
+            respond(['error' => 'Uma das pessoas selecionadas não existe.'], 404);
+        }
+
+        $person = $rows[$personId];
+        $spouse = $rows[$spouseId];
+        $directParent = in_array($spouseId, [(int)$person['padre_id'], (int)$person['madre_id']], true)
+            || in_array($personId, [(int)$spouse['padre_id'], (int)$spouse['madre_id']], true);
+        if ($directParent) {
+            $pdo->rollBack();
+            respond(['error' => 'Pai, mãe e filho não podem ser vinculados como cônjuges.'], 422);
+        }
+
+        $currentSpouseId = $person['conyuge_actual_id'] === null ? null : (int)$person['conyuge_actual_id'];
+        $spouseCurrentId = $spouse['conyuge_actual_id'] === null ? null : (int)$spouse['conyuge_actual_id'];
+        if ($currentSpouseId === $spouseId) {
+            $pdo->rollBack();
+            respond(['error' => 'Essas pessoas já estão vinculadas como cônjuges.'], 409);
+        }
+        if ($spouseCurrentId !== null && $spouseCurrentId !== $personId) {
+            $pdo->rollBack();
+            respond(['error' => 'A pessoa escolhida já possui outro cônjuge vinculado.'], 409);
+        }
+
+        $unlink = $pdo->prepare(
+            'UPDATE pessoas SET conyuge_actual_id = NULL
+             WHERE id = ? AND conyuge_actual_id = ?'
+        );
+        if ($currentSpouseId !== null) {
+            $unlink->execute([$currentSpouseId, $personId]);
+        }
+
+        $link = $pdo->prepare('UPDATE pessoas SET conyuge_actual_id = ? WHERE id = ?');
+        $link->execute([$spouseId, $personId]);
+        $link->execute([$personId, $spouseId]);
+        $pdo->commit();
+
+        respond([
+            'person_id' => $personId,
+            'spouse_id' => $spouseId,
+            'previous_spouse_id' => $currentSpouseId,
+        ]);
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $error;
+    }
 }
 
 function updateLocation(PDO $pdo): never
@@ -646,6 +736,9 @@ try {
     }
     if ($method === 'POST' && $action === 'update_person') {
         updatePerson($pdo);
+    }
+    if ($method === 'POST' && $action === 'change_spouse') {
+        changeSpouse($pdo);
     }
     if ($method === 'POST' && $action === 'update_location') {
         updateLocation($pdo);
